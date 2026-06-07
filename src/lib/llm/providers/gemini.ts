@@ -41,8 +41,33 @@ export class GeminiProvider implements LLMProvider {
       });
     }
 
-    const chat = model.startChat({ history });
-    const result = await chat.sendMessage(request.prompt);
+    let result;
+    try {
+      const chat = model.startChat({ history });
+      result = await chat.sendMessage(request.prompt);
+    } catch (error) {
+      const originalMessage = error instanceof Error ? error.message : String(error);
+      const status =
+        error && typeof error === "object" && "status" in error
+          ? (error as { status: number }).status
+          : undefined;
+
+      if (
+        originalMessage.toLowerCase().includes("rate limit") ||
+        originalMessage.toLowerCase().includes("quota") ||
+        status === 429
+      ) {
+        throw new Error(`Gemini rate limit exceeded (429): ${originalMessage}`);
+      }
+      if (
+        originalMessage.toLowerCase().includes("timeout") ||
+        originalMessage.toLowerCase().includes("connection")
+      ) {
+        throw new Error(`Gemini connection timeout or network issue: ${originalMessage}`);
+      }
+      throw new Error(`Gemini API failed: ${originalMessage}`);
+    }
+
     const text = result.response.text().trim();
 
     if (!text) {

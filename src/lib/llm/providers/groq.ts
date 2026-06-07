@@ -40,12 +40,40 @@ export class GroqProvider implements LLMProvider {
 
     messages.push({ role: "user", content: request.prompt });
 
-    const completion = await client.chat.completions.create({
-      model: config.constants.groqModel,
-      messages,
-      max_tokens: request.maxTokens ?? 200,
-      temperature: request.temperature ?? 0.4,
-    });
+    let completion;
+    try {
+      completion = await client.chat.completions.create({
+        model: config.constants.groqModel,
+        messages,
+        max_tokens: request.maxTokens ?? 200,
+        temperature: request.temperature ?? 0.4,
+      });
+    } catch (error) {
+      const originalMessage = error instanceof Error ? error.message : String(error);
+      const status =
+        error && typeof error === "object" && "status" in error
+          ? (error as { status: number }).status
+          : undefined;
+      const name =
+        error && typeof error === "object" && "name" in error
+          ? (error as { name: string }).name
+          : undefined;
+
+      if (status === 429 || originalMessage.toLowerCase().includes("rate limit")) {
+        throw new Error(`Groq rate limit exceeded (429): ${originalMessage}`);
+      }
+      if (status !== undefined && status >= 500) {
+        throw new Error(`Groq server error (${status}): ${originalMessage}`);
+      }
+      if (
+        name === "APIConnectionError" ||
+        originalMessage.toLowerCase().includes("timeout") ||
+        originalMessage.toLowerCase().includes("connection")
+      ) {
+        throw new Error(`Groq connection timeout or network issue: ${originalMessage}`);
+      }
+      throw new Error(`Groq API failed: ${originalMessage}`);
+    }
 
     const text = completion.choices[0]?.message?.content?.trim();
     if (!text) {
