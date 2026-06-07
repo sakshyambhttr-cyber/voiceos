@@ -7,6 +7,9 @@ export interface YouTubeVideo {
   duration: string;
   url: string;
   thumbnailUrl?: string;
+  views?: number;
+  uploadedAt?: string;
+  isOfficial?: boolean;
 }
 
 const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
@@ -17,6 +20,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "FreeCodeCamp",
       duration: "4:12:00",
       url: "https://www.youtube.com/watch?v=5VhyF_5_mG0",
+      views: 8500000,
+      uploadedAt: "2021-05-10T00:00:00Z",
+      isOfficial: true,
     },
     {
       id: "vid-ai-2",
@@ -24,6 +30,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "Fireship",
       duration: "10:15",
       url: "https://www.youtube.com/watch?v=2e6i5GjPuhk",
+      views: 1200000,
+      uploadedAt: "2023-04-12T00:00:00Z",
+      isOfficial: true,
     },
   ],
   ml: [
@@ -33,6 +42,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "Simplilearn",
       duration: "45:30",
       url: "https://www.youtube.com/watch?v=GwIo3gToqSU",
+      views: 4500000,
+      uploadedAt: "2020-03-20T00:00:00Z",
+      isOfficial: true,
     },
     {
       id: "vid-ml-2",
@@ -40,6 +52,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "3Blue1Brown",
       duration: "22:15",
       url: "https://www.youtube.com/watch?v=aircAruvnKk",
+      views: 15000000,
+      uploadedAt: "2017-10-05T00:00:00Z",
+      isOfficial: true,
     },
   ],
   rag: [
@@ -49,6 +64,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "IBM Technology",
       duration: "8:45",
       url: "https://www.youtube.com/watch?v=T-D1OfcDW1M",
+      views: 650000,
+      uploadedAt: "2023-09-15T00:00:00Z",
+      isOfficial: true,
     },
     {
       id: "vid-rag-2",
@@ -56,6 +74,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "LangChain",
       duration: "15:20",
       url: "https://www.youtube.com/watch?v=f3p_c6Xk1xY",
+      views: 180000,
+      uploadedAt: "2024-02-18T00:00:00Z",
+      isOfficial: true,
     },
   ],
   music: [
@@ -65,6 +86,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "ImagineDragonsVEVO",
       duration: "3:43",
       url: "https://www.youtube.com/watch?v=7wtfhZwyrcc",
+      views: 2800000000,
+      uploadedAt: "2017-03-07T00:00:00Z",
+      isOfficial: true,
     },
     {
       id: "vid-music-2",
@@ -72,6 +96,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "Spiritual India",
       duration: "6:12",
       url: "https://www.youtube.com/watch?v=O1xKz_QeQoo",
+      views: 45000000,
+      uploadedAt: "2020-08-15T00:00:00Z",
+      isOfficial: false,
     },
     {
       id: "vid-music-3",
@@ -79,6 +106,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "Ed Sheeran",
       duration: "4:24",
       url: "https://www.youtube.com/watch?v=JGwWNGJdvx8",
+      views: 6100000000,
+      uploadedAt: "2017-01-30T00:00:00Z",
+      isOfficial: true,
     },
     {
       id: "vid-music-4",
@@ -86,6 +116,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "Alan Walker",
       duration: "3:32",
       url: "https://www.youtube.com/watch?v=60ItHLz5WEA",
+      views: 3400000000,
+      uploadedAt: "2015-12-03T00:00:00Z",
+      isOfficial: true,
     },
   ],
   highlights: [
@@ -95,6 +128,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "Sports Central",
       duration: "15:45",
       url: "https://www.youtube.com/watch?v=3S1_x5c5nS8",
+      views: 1800000,
+      uploadedAt: "2024-01-15T00:00:00Z",
+      isOfficial: true,
     }
   ],
   podcast: [
@@ -104,6 +140,9 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       channel: "Lex Fridman",
       duration: "2:15:30",
       url: "https://www.youtube.com/watch?v=5qap5aO4i9A",
+      views: 2500000,
+      uploadedAt: "2023-11-20T00:00:00Z",
+      isOfficial: true,
     }
   ]
 };

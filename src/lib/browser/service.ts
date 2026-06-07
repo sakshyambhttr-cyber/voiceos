@@ -47,8 +47,12 @@ export const youtube = {
   search(query: string): void {
     if (typeof window === "undefined") return;
     const cleanQuery = sanitizeQuery(query);
-    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (/^https?:\/\//i.test(cleanQuery)) {
+      browser.open(cleanQuery);
+    } else {
+      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   },
   play(query: string): void {
     if (typeof window === "undefined") return;

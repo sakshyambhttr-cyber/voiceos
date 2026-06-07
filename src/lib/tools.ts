@@ -121,6 +121,9 @@ export interface YouTubeVideoStoreItem {
   duration: string;
   url: string;
   thumbnailUrl?: string;
+  views?: number;
+  uploadedAt?: string;
+  isOfficial?: boolean;
 }
 
 export interface ToolStore {

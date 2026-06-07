@@ -18,8 +18,43 @@ export interface YouTubeToolResult {
 }
 
 // Cleans command words and extracts the core search/playback entity
+// Ensures search queries are plain text and never contain URLs
 export function cleanAndValidateYouTubeQuery(message: string): string {
-  let clean = message.toLowerCase().trim();
+  let clean = message.trim();
+
+  // If message itself is a URL or contains a URL, extract the query parameters
+  if (/https?:\/\//i.test(clean)) {
+    try {
+      const urlMatch = clean.match(/https?:\/\/[^\s]+/i);
+      if (urlMatch) {
+        const urlStr = urlMatch[0];
+        const url = new URL(urlStr);
+        if (url.hostname.includes("youtube.com") || url.hostname.includes("youtu.be")) {
+          const searchParam = url.searchParams.get("search_query");
+          const videoParam = url.searchParams.get("v");
+          if (searchParam) {
+            clean = searchParam;
+          } else if (videoParam) {
+            clean = videoParam;
+          } else {
+            clean = clean.replace(urlStr, "").trim();
+          }
+        } else {
+          clean = clean.replace(urlStr, "").trim();
+        }
+      }
+    } catch {
+      clean = clean.replace(/https?:\/\/[^\s]+/gi, "").trim();
+    }
+  }
+
+  // Strip any remaining YouTube or other URLs from the text
+  clean = clean.replace(/(www\.)?youtube\.com\/[^\s]*/gi, "");
+  clean = clean.replace(/(www\.)?youtu\.be\/[^\s]*/gi, "");
+  clean = clean.replace(/https?:\/\/[^\s]*/gi, "");
+
+  // Convert to lowercase for command word stripping
+  clean = clean.toLowerCase();
 
   // 1. Remove composite prefix patterns (longest first)
   const prefixPatterns = [
@@ -187,7 +222,7 @@ export const YouTubeSearchTool = {
       activeTab: "media",
       browserAction: {
         actionType: "youtubeSearch",
-        target: res.targetUrl,
+        target: cleanQuery, // Pass clean query directly to generate search URL exactly once on client
       },
       updatedStore,
     };
@@ -202,16 +237,32 @@ export const YouTubePlayTool = {
     const searchRes = youtubeService.search(cleanQuery);
     const videos = searchRes.videos || [];
 
-    // 2. Score and rank candidate videos
-    const scoredCandidates = videos.map(video => ({
-      video,
-      confidence: calculateConfidence(cleanQuery, video)
-    }));
+    // 2. Score and rank candidate videos using metadata: Relevance, Views, Recency, and Official content preference
+    const scoredCandidates = videos.map(video => {
+      const relevance = calculateConfidence(cleanQuery, video);
+      
+      let compositeScore = relevance * 100;
+      if (relevance > 0) {
+        if (video.isOfficial) compositeScore += 15;
+        compositeScore += Math.min((video.views || 0) / 100000000, 10); // views boost
+        
+        const uploadDate = new Date(video.uploadedAt || "2015-01-01");
+        const ageInYears = (new Date("2026-06-07").getTime() - uploadDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+        compositeScore += Math.max(0, 5 - ageInYears);
+      }
 
-    scoredCandidates.sort((a, b) => b.confidence - a.confidence);
+      return {
+        video,
+        relevance, // Use relevance for confidence thresholds
+        compositeScore
+      };
+    });
+
+    // Sort by composite score descending
+    scoredCandidates.sort((a, b) => b.compositeScore - a.compositeScore);
 
     const topCandidate = scoredCandidates[0];
-    const topConfidence = topCandidate ? topCandidate.confidence : 0;
+    const topConfidence = topCandidate ? topCandidate.relevance : 0;
 
     // 3. Branch based on confidence thresholds
     if (topConfidence >= 0.9) {

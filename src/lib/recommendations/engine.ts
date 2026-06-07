@@ -27,7 +27,18 @@ function uid(): string {
  * Fallback heuristic engine if LLM is unavailable or returns invalid JSON.
  * Guarantees that the specific prompt scenarios are correctly detected and handled.
  */
-export function generateHeuristicInsights(goals: Goal[], store: ToolStore): ProactiveInsights {
+export function generateHeuristicInsights(goals: Goal[], store: ToolStore, memory: MemoryTurn[] = []): ProactiveInsights {
+  const isMemoryEmpty = !memory || memory.length === 0;
+  const isLowInteraction = !memory || memory.length < 3;
+
+  if (isMemoryEmpty || isLowInteraction) {
+    return {
+      dailyFocus: "Explore Voice OS capabilities.",
+      dailyBriefing: "Hi, I'm Antigravity, your Voice Operating System. I can help you manage tasks, sync your calendar, compose emails, research papers, and search or play content on YouTube. What would you like to work on today?",
+      recommendations: [],
+    };
+  }
+
   const recommendations: Recommendation[] = [];
   const activeGoals = goals.filter((g) => g.status === "active");
 
@@ -160,6 +171,17 @@ export async function generateProactiveInsights(params: {
 }): Promise<ProactiveInsights> {
   const { goals, store, memory } = params;
 
+  const isMemoryEmpty = !memory || memory.length === 0;
+  const isLowInteraction = !memory || memory.length < 3;
+
+  if (isMemoryEmpty || isLowInteraction) {
+    return {
+      dailyFocus: "Explore Voice OS capabilities.",
+      dailyBriefing: "Hi, I'm Antigravity, your Voice Operating System. I can help you manage tasks, sync your calendar, compose emails, research papers, and search or play content on YouTube. What would you like to work on today?",
+      recommendations: [],
+    };
+  }
+
   const activeGoals = goals.filter((g) => g.status === "active");
 
   // Try LLM generation first
@@ -269,9 +291,8 @@ Analyze and return the JSON payload.`;
 export function generateDailyBriefing(
   goals: Goal[],
   store: ToolStore,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _memory: MemoryTurn[]
 ): string {
-  const insights = generateHeuristicInsights(goals, store);
+  const insights = generateHeuristicInsights(goals, store, _memory);
   return insights.dailyBriefing;
 }
