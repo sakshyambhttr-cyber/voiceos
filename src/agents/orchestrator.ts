@@ -1,9 +1,13 @@
-import { type ToolStore, type ToolName, type PendingAction, type CalendarEvent } from "@/lib/tools";
+import { type ToolStore, type ToolName, type PendingAction } from "@/lib/tools";
 import { gmailService } from "@/services/gmail";
 import { calendarService } from "@/services/calendar";
 import { youtubeService } from "@/services/youtube";
 import { researchService } from "@/services/research";
 import { YouTubeSearchTool, YouTubePlayTool } from "@/tools/youtube";
+import { parseIntent } from "@/lib/intent";
+import { handleBrowserAction, handleWikipediaSearch } from "@/lib/browser";
+import { planner, isWorkflowRequest } from "@/lib/workflow/planner";
+import { executeWorkflow } from "@/lib/workflow/executor";
 
 export interface OrchestrationResult {
   tool: ToolName;
@@ -11,9 +15,10 @@ export interface OrchestrationResult {
   voiceResponse: string;
   updatedStore: ToolStore;
   activeTab?: "console" | "gmail" | "calendar" | "research" | "media";
-  browserAction?: unknown;
-  pendingAction?: unknown;
+  browserAction?: any;
+  pendingAction?: any;
   query?: string;
+  debugLog?: any;
 }
 
 // Parses meeting times relative to mock session time: Sunday, June 7, 2026, 11:03 AM
@@ -49,6 +54,8 @@ function parseDateTime(text: string): { isoString: string; displayStr: string } 
     hour = 14;
   } else if (m.includes("1 pm") || m.includes("1pm")) {
     hour = 13;
+  } else if (m.includes("3 pm") || m.includes("3pm")) {
+    hour = 15;
   }
 
   targetDate.setHours(hour, minute, 0, 0);
@@ -60,14 +67,63 @@ function parseDateTime(text: string): { isoString: string; displayStr: string } 
   };
 }
 
+function uid(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
 export const orchestrator = {
   /**
    * Evaluates the query, routes to appropriate agent, executes it, and updates memory/store.
    */
-  process(message: string, store: ToolStore): OrchestrationResult | null {
+  async process(message: string, store: ToolStore): Promise<OrchestrationResult | null> {
     const m = message.toLowerCase().trim();
 
-    // ─── 0. Confirmation / Approval checks ───
+    // ─── 0a. Active Workflow Safety Confirmation Checks ───
+    if (store.activeWorkflow && store.activeWorkflow.status === "waiting_confirmation") {
+      const isConfirm = /\b(yes|confirm|approve|go ahead|send it|schedule it|ok|yep|sure)\b/.test(m);
+      const isCancel = /\b(no|cancel|reject|don't|stop|hold on|abort|nope)\b/.test(m);
+
+      if (isConfirm) {
+        const res = await executeWorkflow(store, store.activeWorkflow, true);
+        return {
+          tool: "confirmAction",
+          success: true,
+          voiceResponse: res.voiceResponse,
+          updatedStore: res.updatedStore,
+          activeTab: "calendar",
+          debugLog: {
+            intent: parseIntent(message),
+            platform: "system",
+            action: "confirm",
+            extractedQuery: "",
+            selectedTool: "confirmAction",
+            selectedResult: "Workflow Confirmed",
+          }
+        };
+      } else if (isCancel) {
+        const updatedStore = {
+          ...store,
+          pendingAction: null,
+          activeWorkflow: null,
+        };
+        return {
+          tool: "cancelAction",
+          success: true,
+          voiceResponse: "Workflow cancelled. Staged request has been cleared.",
+          updatedStore,
+          debugLog: {
+            intent: parseIntent(message),
+            platform: "system",
+            action: "cancel",
+            extractedQuery: "",
+            selectedTool: "cancelAction",
+            selectedResult: "Workflow Cancelled",
+          }
+        };
+      }
+    }
+
+    // ─── 0b. Single-Step pendingAction Confirmation / Approval checks ───
     if (store.pendingAction) {
       const isConfirm = /\b(yes|confirm|approve|go ahead|send it|schedule it|ok|yep|sure)\b/.test(m);
       const isCancel = /\b(no|cancel|reject|don't|stop|hold on|abort|nope)\b/.test(m);
@@ -83,15 +139,67 @@ export const orchestrator = {
             voiceResponse: res.voiceResponse,
             updatedStore: res.updatedStore,
             activeTab: "gmail",
+            debugLog: {
+              intent: parseIntent(message),
+              platform: "gmail",
+              action: "send",
+              extractedQuery: "",
+              selectedTool: "confirmAction",
+              selectedResult: "Email Sent",
+            }
           };
         } else if (action.type === "createEvent") {
-          const res = calendarService.commitEvent(store, action.data as CalendarEvent);
+          const res = await calendarService.commitEvent(store, action.data as any);
           return {
             tool: "confirmAction",
             success: true,
             voiceResponse: res.voiceResponse,
             updatedStore: res.updatedStore,
             activeTab: "calendar",
+            debugLog: {
+              intent: parseIntent(message),
+              platform: "calendar",
+              action: "create",
+              extractedQuery: "",
+              selectedTool: "confirmAction",
+              selectedResult: `Event Committed: ${(action.data as any).title}`,
+            }
+          };
+        } else if (action.type === "updateEvent") {
+          const { eventId, updates } = action.data as { eventId: string; updates: any };
+          const res = await calendarService.updateEvent(store, eventId, updates);
+          return {
+            tool: "confirmAction",
+            success: true,
+            voiceResponse: res.voiceResponse,
+            updatedStore: res.updatedStore,
+            activeTab: "calendar",
+            debugLog: {
+              intent: parseIntent(message),
+              platform: "calendar",
+              action: "update",
+              extractedQuery: "",
+              selectedTool: "confirmAction",
+              selectedResult: `Event Updated: ${eventId}`,
+            }
+          };
+        } else if (action.type === "deleteEvent") {
+          const { eventId } = action.data as { eventId: string };
+          const res = await calendarService.deleteEvent(store, eventId);
+          return {
+            tool: "confirmAction",
+            success: true,
+            voiceResponse: res.voiceResponse,
+            updatedStore: res.updatedStore,
+            activeTab: "calendar",
+            debugLog: {
+              intent: parseIntent(message),
+              platform: "calendar",
+              action: "delete",
+              extractedQuery: "",
+              selectedTool: "confirmAction",
+              selectedResult: `Event Deleted: ${eventId}`,
+            }
           };
         }
       } else if (isCancel) {
@@ -104,6 +212,218 @@ export const orchestrator = {
           success: true,
           voiceResponse: "Action cancelled. Staged request has been cleared.",
           updatedStore,
+          debugLog: {
+            intent: parseIntent(message),
+            platform: "system",
+            action: "cancel",
+            extractedQuery: "",
+            selectedTool: "cancelAction",
+            selectedResult: "Action Cancelled",
+          }
+        };
+      }
+    }
+
+    // ─── 0c. Multi-Step Workflow Trigger Check ───
+    if (isWorkflowRequest(message)) {
+      const plan = await planner.buildPlan(message);
+      if (plan) {
+        plan.status = "running";
+        const res = await executeWorkflow(store, plan, false);
+        return {
+          tool: "confirmAction",
+          success: true,
+          voiceResponse: res.voiceResponse,
+          updatedStore: res.updatedStore,
+          activeTab: plan.steps[plan.steps.length - 1].tool === "calendar" ? "calendar" : 
+                     plan.steps[plan.steps.length - 1].tool === "notes" ? "research" : "console",
+          debugLog: {
+            intent: parseIntent(message),
+            platform: "system",
+            action: "workflow",
+            extractedQuery: plan.original_goal,
+            selectedTool: "workflow.run",
+            selectedResult: res.voiceResponse,
+          }
+        };
+      }
+    }
+
+    // ─── Intent Extraction Layer (Single-step YouTube/Google/Wikipedia) ───
+    const intent = parseIntent(message);
+
+    if (intent.platform === "wikipedia") {
+      if (intent.action === "open" && (!intent.entity || intent.entity.toLowerCase() === "wikipedia")) {
+        const res = handleBrowserAction("openWebsite", "wikipedia", store);
+        return {
+          tool: res.tool,
+          success: res.success,
+          voiceResponse: res.voiceResponse,
+          updatedStore: res.updatedStore,
+          activeTab: "research",
+          browserAction: res.browserAction,
+          debugLog: {
+            intent,
+            platform: "wikipedia",
+            action: "open",
+            extractedQuery: "",
+            selectedTool: "openWebsite",
+            selectedResult: "https://www.wikipedia.org",
+          }
+        };
+      }
+      if (intent.action === "search") {
+        const res = handleWikipediaSearch(intent.entity, store);
+        return {
+          tool: res.tool,
+          success: res.success,
+          voiceResponse: res.voiceResponse,
+          updatedStore: res.updatedStore,
+          activeTab: "research",
+          browserAction: res.browserAction,
+          query: intent.entity,
+          debugLog: {
+            intent,
+            platform: "wikipedia",
+            action: intent.action,
+            extractedQuery: intent.entity,
+            selectedTool: res.tool,
+            selectedResult: `Wikipedia Search: ${intent.entity}`,
+          },
+        };
+      }
+    }
+
+    if (intent.platform === "google") {
+      if (intent.action === "open" && (!intent.entity || intent.entity.toLowerCase() === "google")) {
+        const res = handleBrowserAction("openWebsite", "google", store);
+        return {
+          tool: res.tool,
+          success: res.success,
+          voiceResponse: res.voiceResponse,
+          updatedStore: res.updatedStore,
+          activeTab: "research",
+          browserAction: res.browserAction,
+          debugLog: {
+            intent,
+            platform: "google",
+            action: "open",
+            extractedQuery: "",
+            selectedTool: "openWebsite",
+            selectedResult: "https://www.google.com",
+          }
+        };
+      }
+      if (intent.action === "search") {
+        const res = handleBrowserAction("googleSearch", intent.entity, store);
+        return {
+          tool: res.tool,
+          success: res.success,
+          voiceResponse: res.voiceResponse,
+          updatedStore: res.updatedStore,
+          activeTab: "research",
+          browserAction: res.browserAction,
+          query: intent.entity,
+          debugLog: {
+            intent,
+            platform: "google",
+            action: intent.action,
+            extractedQuery: intent.entity,
+            selectedTool: res.tool,
+            selectedResult: `Google Search: ${intent.entity}`,
+          },
+        };
+      }
+    }
+
+    if (intent.platform === "youtube") {
+      // 3a. Play Action
+      if (intent.action === "play") {
+        const res = YouTubePlayTool.execute(intent.entity, store);
+        let currentStore = res.updatedStore || store;
+        if (res.browserAction) {
+          const newAction = {
+            id: "browser-" + uid(),
+            actionType: "youtubePlay" as const,
+            target: res.videoUrl || res.query,
+            createdAt: new Date().toISOString(),
+          };
+          currentStore = {
+            ...currentStore,
+            browserActions: [...(currentStore.browserActions || []), newAction]
+          };
+        }
+        return {
+          tool: "youtube.play",
+          query: res.query,
+          success: true,
+          voiceResponse: res.voiceResponse,
+          updatedStore: currentStore,
+          activeTab: "media",
+          browserAction: res.browserAction,
+          debugLog: {
+            intent,
+            platform: "youtube",
+            action: "play",
+            extractedQuery: intent.entity,
+            selectedTool: "youtube.play",
+            selectedResult: res.videoTitle || null,
+          }
+        };
+      }
+      
+      // 3b. Search Action
+      if (intent.action === "search" || intent.action === "open") {
+        if (intent.action === "open" && (!intent.entity || intent.entity.toLowerCase() === "youtube")) {
+          const res = handleBrowserAction("openWebsite", "youtube", store);
+          return {
+            tool: res.tool,
+            success: res.success,
+            voiceResponse: res.voiceResponse,
+            updatedStore: res.updatedStore,
+            activeTab: "media",
+            browserAction: res.browserAction,
+            debugLog: {
+              intent,
+              platform: "youtube",
+              action: "open",
+              extractedQuery: "",
+              selectedTool: "openWebsite",
+              selectedResult: "https://www.youtube.com",
+            }
+          };
+        }
+
+        const res = YouTubeSearchTool.execute(intent.entity, store);
+        let currentStore = res.updatedStore || store;
+        if (res.browserAction) {
+          const newAction = {
+            id: "browser-" + uid(),
+            actionType: "youtubeSearch" as const,
+            target: res.query,
+            createdAt: new Date().toISOString(),
+          };
+          currentStore = {
+            ...currentStore,
+            browserActions: [...(currentStore.browserActions || []), newAction]
+          };
+        }
+        return {
+          tool: "youtube.search",
+          query: res.query,
+          success: true,
+          voiceResponse: res.voiceResponse,
+          updatedStore: currentStore,
+          activeTab: "media",
+          browserAction: res.browserAction,
+          debugLog: {
+            intent,
+            platform: "youtube",
+            action: "search",
+            extractedQuery: intent.entity,
+            selectedTool: "youtube.search",
+            selectedResult: res.videos && res.videos[0] ? res.videos[0].title : null,
+          }
         };
       }
     }
@@ -116,7 +436,6 @@ export const orchestrator = {
         const onlyImportant = m.includes("important");
         const res = gmailService.readInbox(store, onlyImportant);
         
-        // Add to history context
         const updatedStore = {
           ...store,
           learningInterests: [...(store.learningInterests || []), "emails"],
@@ -133,7 +452,6 @@ export const orchestrator = {
 
       // 1b. Draft Email
       if (/\b(draft|reply|compose|write|create draft)\b/.test(m)) {
-        // Extract recipient
         let to = "recipient@example.com";
         const toMatch = m.match(/to\s+([a-zA-Z0-9_\-\.]+)/);
         if (toMatch) {
@@ -143,7 +461,6 @@ export const orchestrator = {
           to = "support@murf.ai";
         }
 
-        // Extract subject/body
         let subject = "Follow-up Sync";
         if (m.includes("follow-up")) {
           subject = "Follow-up Sync";
@@ -172,7 +489,7 @@ export const orchestrator = {
         if (drafts.length > 0) {
           const latestDraft = drafts[drafts.length - 1];
           const pendingAction: PendingAction = {
-            id: "action-" + Date.now().toString(36),
+            id: "action-" + uid(),
             type: "sendEmail",
             description: `Send email to ${latestDraft.to} with subject "${latestDraft.subject}"`,
             data: { draftId: latestDraft.id },
@@ -205,7 +522,7 @@ export const orchestrator = {
     if (isCalendarQuery) {
       // 2a. Morning Briefing
       if (/\b(morning briefing|daily schedule summary|briefing|daily focus|schedule summary)\b/.test(m)) {
-        const voiceResponse = calendarService.generateMorningBriefing(store);
+        const voiceResponse = await calendarService.generateMorningBriefing(store);
         return {
           tool: "morningBriefing",
           success: true,
@@ -215,23 +532,21 @@ export const orchestrator = {
         };
       }
 
-      // 2b. Schedule Event
+      // 2b. Schedule Event (Automatic, unless conflict exists)
       if (/\b(schedule|add|create|book|appoint)\b/.test(m)) {
-        // Extract title
         let title = "Sync Meeting";
         const titleMatch = cleanTitle(message);
         if (titleMatch) title = titleMatch;
 
         const { isoString } = parseDateTime(m);
-        const res = calendarService.scheduleEvent(store, title, isoString);
+        const res = await calendarService.scheduleEvent(store, title, isoString);
 
         if (res.conflict) {
-          // Staging conflict response
           return {
             tool: "conflictCheck",
             success: false,
             voiceResponse: res.voiceResponse,
-            updatedStore: store, // no update to store if conflict
+            updatedStore: res.updatedStore || store,
             activeTab: "calendar",
           };
         }
@@ -248,81 +563,78 @@ export const orchestrator = {
       // 2c. Read Calendar
       if (/\b(read|show|list|meetings|events|schedule|agenda)\b/.test(m)) {
         const period = m.includes("week") ? "week" : "today";
-        const res = calendarService.readCalendar(store, period);
+        const res = await calendarService.readCalendar(store, period);
         return {
           tool: "readCalendar",
-          success: true,
+          success: res.success,
           voiceResponse: res.voiceResponse,
-          updatedStore: store,
+          updatedStore: res.updatedStore || store,
+          activeTab: "calendar",
+        };
+      }
+
+      // 2d. Move/Update Event (Staged for safety confirmation)
+      if (/\b(move|reschedule|change|shift)\b/.test(m)) {
+        const targetEvent = store.calendarEvents?.[0] || { id: "cal-1", title: "Electronics Lecture" };
+        let dateLabel = "Friday";
+        let newStartTime = "2026-06-12T13:00:00.000Z";
+        let newEndTime = "2026-06-12T14:30:00.000Z";
+
+        if (m.includes("monday")) {
+          dateLabel = "Monday";
+          newStartTime = "2026-06-08T14:00:00.000Z";
+          newEndTime = "2026-06-08T15:30:00.000Z";
+        }
+
+        const pendingAction: PendingAction = {
+          id: "action-" + uid(),
+          type: "updateEvent",
+          description: `Move "${targetEvent.title}" to ${dateLabel}`,
+          data: {
+            eventId: targetEvent.id,
+            updates: { startTime: newStartTime, endTime: newEndTime }
+          }
+        };
+
+        return {
+          tool: "scheduleEvent",
+          success: true,
+          voiceResponse: `I've prepared to move your meeting "${targetEvent.title}" to ${dateLabel}. Should I go ahead?`,
+          updatedStore: {
+            ...store,
+            pendingAction
+          },
+          activeTab: "calendar",
+        };
+      }
+
+      // 2e. Delete Event (Staged for safety confirmation)
+      if (/\b(delete|remove|cancel)\b/.test(m)) {
+        const targetEvent = store.calendarEvents?.find(e => e.startTime.includes("2026-06-08")) || store.calendarEvents?.[1] || { id: "cal-2", title: "Study Group - NumPy Exercises" };
+
+        const pendingAction: PendingAction = {
+          id: "action-" + uid(),
+          type: "deleteEvent",
+          description: `Delete event "${targetEvent.title}"`,
+          data: { eventId: targetEvent.id }
+        };
+
+        return {
+          tool: "scheduleEvent",
+          success: true,
+          voiceResponse: `I've prepared to delete "${targetEvent.title}". Should I go ahead and delete it?`,
+          updatedStore: {
+            ...store,
+            pendingAction
+          },
           activeTab: "calendar",
         };
       }
     }
 
-    // ─── 3. Media & Knowledge Agent Classification ───
+    // ─── 3. Media & Knowledge Agent Classification (Legacy Search/Play Fallbacks) ───
     const isYoutube = /\b(youtube|yt|video|videos|play|watch|listen|start|search|find|show\s+me|tutorial|tutorials|course|courses|song|songs|bhajan|music|podcast|podcasts|highlights)\b/.test(m);
     if (isYoutube) {
-      // 3a. Play Intent
-      const isPlay = /\b(play|watch|listen\s+to|listen|start)\b/.test(m);
-      if (isPlay) {
-        const res = YouTubePlayTool.execute(message, store);
-        
-        let currentStore = res.updatedStore || store;
-        if (res.browserAction) {
-          const newAction = {
-            id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-            actionType: "youtubePlay" as const,
-            target: res.videoUrl || res.query,
-            createdAt: new Date().toISOString(),
-          };
-          currentStore = {
-            ...currentStore,
-            browserActions: [...(currentStore.browserActions || []), newAction]
-          };
-        }
-
-        return {
-          tool: "youtube.play",
-          query: res.query,
-          success: true,
-          voiceResponse: res.voiceResponse,
-          updatedStore: currentStore,
-          activeTab: "media",
-          browserAction: res.browserAction,
-        };
-      }
-
-      // 3b. Search Intent
-      const isSearch = /\b(search|find|show\s+me)\b/.test(m);
-      if (isSearch) {
-        const res = YouTubeSearchTool.execute(message, store);
-        
-        let currentStore = res.updatedStore || store;
-        if (res.browserAction) {
-          const newAction = {
-            id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-            actionType: "youtubeSearch" as const,
-            target: res.query,
-            createdAt: new Date().toISOString(),
-          };
-          currentStore = {
-            ...currentStore,
-            browserActions: [...(currentStore.browserActions || []), newAction]
-          };
-        }
-
-        return {
-          tool: "youtube.search",
-          query: res.query,
-          success: true,
-          voiceResponse: res.voiceResponse,
-          updatedStore: currentStore,
-          activeTab: "media",
-          browserAction: res.browserAction,
-        };
-      }
-
-      // 3c. YouTube Recommendations
       if (/\b(recommendation|recommendations|what should i watch|suggest videos)\b/.test(m)) {
         const res = youtubeService.getLearningRecommendations(store);
         return {
@@ -334,17 +646,13 @@ export const orchestrator = {
         };
       }
 
-      // 3d. Educational Discovery
       if (/\b(educational|explain|explaining|course|courses|learn|study|discover)\b/.test(m)) {
         const query = m.replace(/^(find\s+videos\s+explaining|find\s+courses\s+about|find|explain|discover)\s+/i, "").trim();
         const res = youtubeService.search(query);
-        
-        // Add interest to memory
         const updatedStore = {
           ...store,
           learningInterests: [...(store.learningInterests || []), query],
         };
-
         return {
           tool: "youtubeEducational",
           success: true,
@@ -353,42 +661,15 @@ export const orchestrator = {
           activeTab: "media",
         };
       }
-
-      // 3e. General YouTube Fallback
-      const res = YouTubeSearchTool.execute(message, store);
-      let currentStore = res.updatedStore || store;
-      if (res.browserAction) {
-        const newAction = {
-          id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-          actionType: "youtubeSearch" as const,
-          target: res.query,
-          createdAt: new Date().toISOString(),
-        };
-        currentStore = {
-          ...currentStore,
-          browserActions: [...(currentStore.browserActions || []), newAction]
-        };
-      }
-      return {
-        tool: "youtube.search",
-        query: res.query,
-        success: true,
-        voiceResponse: res.voiceResponse,
-        updatedStore: currentStore,
-        activeTab: "media",
-        browserAction: res.browserAction,
-      };
     }
 
     // ─── 4. Research Agent Classification ───
     const isResearch = /\b(research|paper|papers|framework|frameworks|compare|comparison|architecture|documentation|docs|api)\b/.test(m);
     if (isResearch) {
-      // 4a. Compare Frameworks
       if (/\b(compare|versus|vs)\b/.test(m)) {
         let itemA = "PyTorch";
         let itemB = "TensorFlow";
 
-        // Parse items from query (e.g. "compare PyTorch vs TensorFlow" or "compare PyTorch and TensorFlow")
         const compareMatch = m.match(/compare\s+([a-zA-Z0-9_\-\.]+)\s+(?:vs|versus|and)\s+([a-zA-Z0-9_\-\.]+)/i);
         if (compareMatch) {
           itemA = compareMatch[1].charAt(0).toUpperCase() + compareMatch[1].slice(1);
@@ -405,7 +686,6 @@ export const orchestrator = {
         };
       }
 
-      // 4b. Documentation Analysis
       if (/\b(docs|api|documentation|technical docs)\b/.test(m)) {
         let docTitle = "Active API Interface";
         const docsMatch = m.match(/documentation\s+for\s+([a-zA-Z0-9_\-\.\s]+)/i);
@@ -423,7 +703,6 @@ export const orchestrator = {
         };
       }
 
-      // 4c. Research Paper Analysis
       if (/\b(analyze|summarize|read)\b/.test(m)) {
         let paperTitle = "Attention Is All You Need";
         const paperMatch = m.match(/(?:analyze|summarize|read)\s+(?:paper|research paper)\s+([a-zA-Z0-9_\-\.\s]+)/i);
@@ -451,7 +730,7 @@ function cleanTitle(msg: string): string {
   let title = msg.trim();
   title = title
     .replace(/^(schedule\s+a\s+meeting|schedule\s+meeting|schedule\s+event|schedule|add\s+event|add\s+meeting|add\s+reminder|remind\s+me)\s*/i, "")
-    .replace(/\b(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at\s+\d+\s*(?:am|pm|pm)?)\b/gi, "")
+    .replace(/\b(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|at \d+\s*(?:am|pm|pm)?)\b/gi, "")
     .replace(/\b(at|on|for|tomorrow|today)\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -459,5 +738,5 @@ function cleanTitle(msg: string): string {
   if (title) {
     return title.charAt(0).toUpperCase() + title.slice(1);
   }
-  return "Sync Sync";
+  return "Sync Meeting";
 }

@@ -16,6 +16,7 @@ import { requiresCouncil, runCouncil } from "@/lib/council";
 import { detectBrowserIntent, handleBrowserAction } from "@/lib/browser";
 import { orchestrator } from "@/agents/orchestrator";
 import { config } from "@/config";
+import { parseIntent } from "@/lib/intent";
 
 /* ─── Types ──────────────────────────────────────────────────── */
 export type AgentMode = "general" | "planner" | "tutor" | "research";
@@ -92,10 +93,20 @@ export async function POST(req: NextRequest) {
     };
 
     const text = message.trim();
+    const parsedIntent = parseIntent(text);
 
     // ─── Step 0: Run unified orchestrator for productivity agents ───
-    const orchestrationResult = orchestrator.process(text, safeStore);
+    const orchestrationResult = await orchestrator.process(text, safeStore);
     if (orchestrationResult) {
+      const debugLog = orchestrationResult.debugLog || {
+        intent: parsedIntent,
+        platform: parsedIntent.platform || "system",
+        action: parsedIntent.action || "none",
+        extractedQuery: parsedIntent.entity || text,
+        selectedTool: orchestrationResult.tool,
+        selectedResult: orchestrationResult.voiceResponse,
+      };
+
       return NextResponse.json({
         response: orchestrationResult.voiceResponse,
         toolUsed: orchestrationResult.tool,
@@ -104,6 +115,7 @@ export async function POST(req: NextRequest) {
         browserAction: orchestrationResult.browserAction,
         query: orchestrationResult.query,
         mode: activeMode,
+        debugLog,
       });
     }
 
@@ -114,11 +126,20 @@ export async function POST(req: NextRequest) {
       const result = await createGoalPlan({ rawGoal: text });
       if (result.success && result.goal) {
         goalStore.add(result.goal);
+        const debugLog = {
+          intent: parsedIntent,
+          platform: "goals",
+          action: "createGoal",
+          extractedQuery: text,
+          selectedTool: "createGoal",
+          selectedResult: result.voiceResponse,
+        };
         return NextResponse.json({
           response: result.voiceResponse,
           toolUsed: "createGoal",
           goal: result.goal,
           mode: activeMode,
+          debugLog,
         });
       }
     }
@@ -126,11 +147,20 @@ export async function POST(req: NextRequest) {
     if (goalIntent === "listGoals" || goalIntent === "goalStatus") {
       const goals = goalStore.getAll();
       const voiceResponse = summariseGoals(goals);
+      const debugLog = {
+        intent: parsedIntent,
+        platform: "goals",
+        action: goalIntent,
+        extractedQuery: text,
+        selectedTool: goalIntent,
+        selectedResult: voiceResponse,
+      };
       return NextResponse.json({
         response: voiceResponse,
-        toolUsed: "listGoals",
+        toolUsed: goalIntent,
         goals,
         mode: activeMode,
+        debugLog,
       });
     }
 
@@ -139,47 +169,92 @@ export async function POST(req: NextRequest) {
 
     if (intent === "calculate") {
       const result = calculate(text);
+      const voiceResponse = result !== null
+        ? `The answer is ${spokenNumber(result)}.`
+        : "I could not parse that calculation. Please rephrase it.";
+      const debugLog = {
+        intent: parsedIntent,
+        platform: "system",
+        action: "calculate",
+        extractedQuery: text,
+        selectedTool: "calculate",
+        selectedResult: voiceResponse,
+      };
       return NextResponse.json({
-        response:
-          result !== null
-            ? `The answer is ${spokenNumber(result)}.`
-            : "I could not parse that calculation. Please rephrase it.",
+        response: voiceResponse,
         toolUsed: "calculate",
         mode: activeMode,
+        debugLog,
       });
     }
     if (intent === "createTask") {
       const r = toolCreateTask(text, safeStore);
+      const debugLog = {
+        intent: parsedIntent,
+        platform: "system",
+        action: "createTask",
+        extractedQuery: text,
+        selectedTool: "createTask",
+        selectedResult: r.voiceResponse,
+      };
       return NextResponse.json({
         response: r.voiceResponse,
         toolUsed: "createTask",
         updatedStore: r.updatedStore,
         mode: activeMode,
+        debugLog,
       });
     }
     if (intent === "createNote") {
       const r = toolCreateNote(text, safeStore);
+      const debugLog = {
+        intent: parsedIntent,
+        platform: "system",
+        action: "createNote",
+        extractedQuery: text,
+        selectedTool: "createNote",
+        selectedResult: r.voiceResponse,
+      };
       return NextResponse.json({
         response: r.voiceResponse,
         toolUsed: "createNote",
         updatedStore: r.updatedStore,
         mode: activeMode,
+        debugLog,
       });
     }
     if (intent === "getTasks") {
       const r = toolGetTasks(safeStore);
+      const debugLog = {
+        intent: parsedIntent,
+        platform: "system",
+        action: "getTasks",
+        extractedQuery: text,
+        selectedTool: "getTasks",
+        selectedResult: r.voiceResponse,
+      };
       return NextResponse.json({
         response: r.voiceResponse,
         toolUsed: "getTasks",
         mode: activeMode,
+        debugLog,
       });
     }
     if (intent === "getNotes") {
       const r = toolGetNotes(safeStore);
+      const debugLog = {
+        intent: parsedIntent,
+        platform: "system",
+        action: "getNotes",
+        extractedQuery: text,
+        selectedTool: "getNotes",
+        selectedResult: r.voiceResponse,
+      };
       return NextResponse.json({
         response: r.voiceResponse,
         toolUsed: "getNotes",
         mode: activeMode,
+        debugLog,
       });
     }
 
@@ -188,12 +263,21 @@ export async function POST(req: NextRequest) {
 
     if (browserIntent !== "none") {
       const r = handleBrowserAction(browserIntent, text, safeStore);
+      const debugLog = {
+        intent: parsedIntent,
+        platform: "browser",
+        action: browserIntent,
+        extractedQuery: text,
+        selectedTool: r.tool,
+        selectedResult: r.browserAction.target,
+      };
       return NextResponse.json({
         response: r.voiceResponse,
         toolUsed: r.tool,
         updatedStore: r.updatedStore,
         browserAction: r.browserAction,
         mode: activeMode,
+        debugLog,
       });
     }
 
@@ -205,11 +289,20 @@ export async function POST(req: NextRequest) {
         goals: goalStore.getAll(),
         store: safeStore,
       });
+      const debugLog = {
+        intent: parsedIntent,
+        platform: "council",
+        action: "complex",
+        extractedQuery: text,
+        selectedTool: "council",
+        selectedResult: councilResult.voiceResponse,
+      };
       return NextResponse.json({
         response: councilResult.voiceResponse,
         toolUsed: "council",
         councilResult,
         mode: activeMode,
+        debugLog,
       });
     }
 
@@ -254,14 +347,32 @@ export async function POST(req: NextRequest) {
     });
 
     if (!llmResult.success) {
+      const debugLog = {
+        intent: parsedIntent,
+        platform: null,
+        action: "none",
+        extractedQuery: text,
+        selectedTool: "none",
+        selectedResult: llmResult.message,
+      };
       // All providers failed — return structured error voice response
       return NextResponse.json({
         response: llmResult.message,
         toolUsed: "none",
         mode: activeMode,
         error: true,
+        debugLog,
       });
     }
+
+    const debugLog = {
+      intent: parsedIntent,
+      platform: null,
+      action: "none",
+      extractedQuery: text,
+      selectedTool: "none",
+      selectedResult: llmResult.text,
+    };
 
     return NextResponse.json({
       response: llmResult.text,
@@ -269,6 +380,7 @@ export async function POST(req: NextRequest) {
       provider: llmResult.provider,
       latencyMs: llmResult.latencyMs,
       mode: activeMode,
+      debugLog,
     });
   } catch (error) {
     console.error("[/api/agent]", error);

@@ -6,12 +6,17 @@
 import { type ToolStore, type ToolName, type BrowserAction } from "../tools";
 import { type BrowserActionType, extractBrowserTarget } from "./intent";
 
+// Wikipedia search URL builder
+function buildWikipediaUrl(query: string): string {
+  return `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`;
+}
+
 export interface BrowserActionResult {
   tool: ToolName;
   success: boolean;
   voiceResponse: string;
   browserAction: {
-    actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay";
+    actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay" | "wikipediaSearch";
     target: string;
   };
   updatedStore: ToolStore;
@@ -33,6 +38,37 @@ const POPULAR_SITES: Record<string, string> = {
   netflix: "https://www.netflix.com",
 };
 
+/** Handle Wikipedia search as a first-class browser action */
+export function handleWikipediaSearch(
+  query: string,
+  store: ToolStore
+): BrowserActionResult {
+  const cleanQuery = query.trim();
+  const targetUrl = buildWikipediaUrl(cleanQuery);
+  const newAction: BrowserAction = {
+    id: uid(),
+    actionType: "open",
+    target: targetUrl,
+    createdAt: new Date().toISOString(),
+  };
+  const updatedStore: ToolStore = {
+    ...store,
+    browserActions: Array.isArray(store.browserActions)
+      ? [...store.browserActions, newAction]
+      : [newAction],
+  };
+  return {
+    tool: "openWebsite",
+    success: true,
+    voiceResponse: `Searching Wikipedia for ${cleanQuery}.`,
+    browserAction: {
+      actionType: "wikipediaSearch",
+      target: targetUrl,
+    },
+    updatedStore,
+  };
+}
+
 // Generates a simple server-safe unique ID
 function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -49,7 +85,7 @@ export function handleBrowserAction(
   const target = extractBrowserTarget(intent, message);
   let tool: ToolName = "none";
   let voiceResponse = "";
-  let actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay" = "open";
+  let actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay" | "wikipediaSearch" = "open";
   let finalTarget = target;
 
   switch (intent) {

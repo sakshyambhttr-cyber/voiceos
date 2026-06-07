@@ -10,6 +10,8 @@ export interface YouTubeVideo {
   views?: number;
   uploadedAt?: string;
   isOfficial?: boolean;
+  isVerifiedChannel?: boolean;
+  contentType?: "music" | "educational" | "sports" | "podcast" | "general";
 }
 
 const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
@@ -23,6 +25,7 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 8500000,
       uploadedAt: "2021-05-10T00:00:00Z",
       isOfficial: true,
+      contentType: "educational",
     },
     {
       id: "vid-ai-2",
@@ -33,6 +36,18 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 1200000,
       uploadedAt: "2023-04-12T00:00:00Z",
       isOfficial: true,
+      contentType: "educational",
+    },
+    {
+      id: "vid-ai-short",
+      title: "Generative AI explained in 30 seconds! #shorts",
+      channel: "TechShorts",
+      duration: "0:30",
+      url: "https://www.youtube.com/watch?v=ai-shorts",
+      views: 80000,
+      uploadedAt: "2024-06-01T00:00:00Z",
+      isOfficial: false,
+      contentType: "educational",
     },
   ],
   ml: [
@@ -45,6 +60,7 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 4500000,
       uploadedAt: "2020-03-20T00:00:00Z",
       isOfficial: true,
+      contentType: "educational",
     },
     {
       id: "vid-ml-2",
@@ -55,6 +71,7 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 15000000,
       uploadedAt: "2017-10-05T00:00:00Z",
       isOfficial: true,
+      contentType: "educational",
     },
   ],
   rag: [
@@ -67,6 +84,7 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 650000,
       uploadedAt: "2023-09-15T00:00:00Z",
       isOfficial: true,
+      contentType: "educational",
     },
     {
       id: "vid-rag-2",
@@ -77,6 +95,7 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 180000,
       uploadedAt: "2024-02-18T00:00:00Z",
       isOfficial: true,
+      contentType: "educational",
     },
   ],
   music: [
@@ -89,6 +108,7 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 2800000000,
       uploadedAt: "2017-03-07T00:00:00Z",
       isOfficial: true,
+      contentType: "music",
     },
     {
       id: "vid-music-2",
@@ -99,6 +119,7 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 45000000,
       uploadedAt: "2020-08-15T00:00:00Z",
       isOfficial: false,
+      contentType: "music",
     },
     {
       id: "vid-music-3",
@@ -109,6 +130,7 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 6100000000,
       uploadedAt: "2017-01-30T00:00:00Z",
       isOfficial: true,
+      contentType: "music",
     },
     {
       id: "vid-music-4",
@@ -119,6 +141,18 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 3400000000,
       uploadedAt: "2015-12-03T00:00:00Z",
       isOfficial: true,
+      contentType: "music",
+    },
+    {
+      id: "vid-music-fan",
+      title: "Imagine Dragons - Believer (Reaction Video & Cover)",
+      channel: "Music Fan Reaction",
+      duration: "5:10",
+      url: "https://www.youtube.com/watch?v=reaction-believer",
+      views: 12000,
+      uploadedAt: "2024-05-10T00:00:00Z",
+      isOfficial: false,
+      contentType: "music",
     },
   ],
   highlights: [
@@ -131,6 +165,19 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 1800000,
       uploadedAt: "2024-01-15T00:00:00Z",
       isOfficial: true,
+      isVerifiedChannel: true,
+      contentType: "sports",
+    },
+    {
+      id: "vid-sports-fan",
+      title: "India vs Afghanistan crazy fan clip from the stands!",
+      channel: "CricketFanatic",
+      duration: "1:20",
+      url: "https://www.youtube.com/watch?v=cricket-fan-clip",
+      views: 5000,
+      uploadedAt: "2024-01-16T00:00:00Z",
+      isOfficial: false,
+      contentType: "sports",
     }
   ],
   podcast: [
@@ -143,6 +190,7 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       views: 2500000,
       uploadedAt: "2023-11-20T00:00:00Z",
       isOfficial: true,
+      contentType: "podcast",
     }
   ]
 };

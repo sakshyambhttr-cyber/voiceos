@@ -14,6 +14,7 @@ import { CommunicationPanel } from "@/components/CommunicationPanel";
 import { CalendarPanel } from "@/components/CalendarPanel";
 import { ResearchPanel } from "@/components/ResearchPanel";
 import { MediaPanel } from "@/components/MediaPanel";
+import { DebugPanel } from "@/components/DebugPanel";
 
 // 3. Types and local imports
 import type { AgentMode, MemoryTurn } from "./api/agent/route";
@@ -122,6 +123,8 @@ function speechErrorMessage(code: string): { text: string; showTextFallback: boo
 export default function VoiceAgentOS() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [memory, setMemory] = useState<MemoryTurn[]>([]);
+  const [debugLog, setDebugLog] = useState<any>(null);
+  const [showDebug, setShowDebug] = useState<boolean>(false);
   const [store, setStore] = useState<ToolStore>(() => {
     return {
       tasks: [
@@ -783,6 +786,10 @@ export default function VoiceAgentOS() {
           setStore(data.updatedStore);
         }
 
+        if (data.debugLog) {
+          setDebugLog(data.debugLog);
+        }
+
         if (data.activeTab) {
           setActiveCenterTab(data.activeTab);
         }
@@ -844,6 +851,34 @@ export default function VoiceAgentOS() {
     },
     [playVoice, handleInterruptionCommand]
   );
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("oauth_success") === "true") {
+        const accessToken = params.get("access_token") || "";
+        const refreshToken = params.get("refresh_token") || "";
+        const expiryDate = parseInt(params.get("expiry_date") || "0");
+        const provider = params.get("provider") || "google";
+        
+        const calendarTokens = {
+          accessToken,
+          refreshToken,
+          expiryDate
+        };
+
+        setStore(prev => ({
+          ...prev,
+          calendarTokens
+        }));
+
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+
+        alert(`Successfully connected ${provider === "google" ? "Google Calendar" : "Mock Calendar"}!`);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     sendToAgentRef.current = sendToAgent;
@@ -1208,6 +1243,47 @@ export default function VoiceAgentOS() {
             <span className="state-dot" style={{ background: cfg.dotColor }} />
             <span style={{ color: "var(--text-secondary)" }}>{cfg.label}</span>
           </div>
+
+          {/* Connect calendar button */}
+          <button
+            onClick={() => {
+              window.location.href = "/api/auth/google";
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              border: "1px solid var(--border-soft)",
+              borderRadius: "var(--radius-sm)",
+              padding: "4px 10px",
+              background: store.calendarTokens ? "hsl(142, 55%, 48%, 0.1)" : "var(--bg-2)",
+              color: store.calendarTokens ? "hsl(142, 55%, 75%)" : "var(--text-secondary)",
+              cursor: "pointer",
+              fontSize: "11px",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            <span style={{
+              width: "6px",
+              height: "6px",
+              borderRadius: "50%",
+              background: store.calendarTokens ? "hsl(142, 55%, 48%)" : "hsl(0, 0%, 40%)",
+            }} />
+            {store.calendarTokens ? "Google Cal Connected" : "Connect Google Cal"}
+          </button>
+
+          {/* Debug Panel Toggle */}
+          <button
+            onClick={() => setShowDebug(v => !v)}
+            className="btn-system"
+            style={{
+              background: showDebug ? "hsl(38, 90%, 55%, 0.15)" : "var(--bg-2)",
+              borderColor: showDebug ? "hsl(38, 90%, 55%, 0.3)" : "var(--border-soft)",
+              color: showDebug ? "hsl(38, 90%, 75%)" : "var(--text-secondary)",
+            }}
+          >
+            [Debug Console]
+          </button>
 
           {/* Activity toggle */}
           <button
@@ -1754,6 +1830,15 @@ export default function VoiceAgentOS() {
           </aside>
         )}
       </div>
+
+      <DebugPanel
+        debugLog={debugLog}
+        activeWorkflow={store.activeWorkflow}
+        isVisible={showDebug}
+        onClose={() => setShowDebug(false)}
+        defaultCalendar={store.defaultCalendar || "Personal"}
+        providerName={store.calendarTokens ? "Google Calendar" : "Mock Calendar"}
+      />
     </div>
   );
 }

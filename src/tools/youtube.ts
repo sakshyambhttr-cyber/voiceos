@@ -148,39 +148,18 @@ function calculateConfidence(query: string, video: YouTubeVideo): number {
   const channel = video.channel.toLowerCase();
 
   // Strip common filler words from query for cleaner matching
-  const cleanQ = q
+  let cleanQ = q
     .replace(/\b(play|watch|listen\s+to|listen|start|open|on|youtube|yt|video|videos|by|the|a|an)\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
-  let score = 0;
-
-  // 1. Channel / Artist match (0.3)
-  // Split channel into meaningful words and check if query contains any of them
-  const channelWords = channel.split(/[\s\-_]+/).filter(w => w.length > 3);
-  for (const cWord of channelWords) {
-    if (cleanQ.includes(cWord)) {
-      score += 0.3;
-      break;
-    }
+  if (!cleanQ && q) {
+    cleanQ = q;
   }
 
-  // 2. Exact phrase match in title (0.35)
-  // Check if the cleaned query (or a significant part) appears in the title
-  const cleanTitle = title.replace(/[^a-z0-9\s]/g, "");
-  if (cleanQ && cleanTitle.includes(cleanQ)) {
-    score += 0.35;
-  } else if (cleanQ.length > 4) {
-    // Check reverse: if title phrase appears in query (useful for short titles)
-    const cleanTitleWords = cleanTitle.split(/\s+/).filter(w => w.length > 3);
-    const matchingTitleWords = cleanTitleWords.filter(w => cleanQ.includes(w));
-    if (cleanTitleWords.length > 0 && matchingTitleWords.length / cleanTitleWords.length >= 0.7) {
-      score += 0.25;
-    }
-  }
-
-  // 3. Word overlap ratio (0.35)
-  const queryWords = cleanQ.split(/\s+/).filter(w => w.length > 2);
+  // 1. Semantic similarity (word overlap) - 40% (0.40)
+  const queryWords = cleanQ.split(/\s+/).filter(w => w.length > 0);
+  let semanticScore = 0;
   if (queryWords.length > 0) {
     let matches = 0;
     for (const word of queryWords) {
@@ -188,10 +167,40 @@ function calculateConfidence(query: string, video: YouTubeVideo): number {
         matches++;
       }
     }
-    score += (matches / queryWords.length) * 0.35;
+    semanticScore = matches / queryWords.length;
   }
 
-  return Math.min(score, 1.0);
+  // 2. Title match (exact/partial phrase) - 25% (0.25)
+  const titleClean = title.replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+  const queryClean = cleanQ.replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+
+  let titleScore = 0;
+  if (queryClean && titleClean.includes(queryClean)) {
+    titleScore = 1.0;
+  } else if (queryClean.length > 4) {
+    const titleWords = titleClean.split(/\s+/).filter(w => w.length > 3);
+    const matchingTitleWords = titleWords.filter(w => queryClean.includes(w));
+    if (titleWords.length > 0 && matchingTitleWords.length / titleWords.length >= 0.7) {
+      titleScore = 0.7;
+    }
+  }
+
+  // 3. Popularity (views) - 20% (0.20)
+  const views = video.views || 0;
+  const popularityScore = views > 0 ? Math.min(Math.log10(views) / 9, 1.0) : 0;
+
+  // 4. Channel credibility (isOfficial) - 10% (0.10)
+  const credibilityScore = (video.isOfficial || video.isVerifiedChannel) ? 1.0 : 0.0;
+
+  // 5. Recency (upload date proximity) - 5% (0.05)
+  const uploadDate = new Date(video.uploadedAt || "2015-01-01");
+  const currentDate = new Date("2026-06-07");
+  const ageInYears = (currentDate.getTime() - uploadDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+  const recencyScore = Math.max(0, 1 - ageInYears / 10);
+
+  const confidence = (semanticScore * 0.40) + (titleScore * 0.25) + (popularityScore * 0.20) + (credibilityScore * 0.10) + (recencyScore * 0.05);
+
+  return Math.min(Math.max(confidence, 0.0), 1.0);
 }
 
 export const YouTubeSearchTool = {
@@ -233,17 +242,49 @@ export const YouTubePlayTool = {
       
       let compositeScore = relevance * 100;
       if (relevance > 0) {
-        if (video.isOfficial) compositeScore += 15;
-        compositeScore += Math.min((video.views || 0) / 100000000, 10); // views boost
-        
-        const uploadDate = new Date(video.uploadedAt || "2015-01-01");
-        const ageInYears = (new Date("2026-06-07").getTime() - uploadDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
-        compositeScore += Math.max(0, 5 - ageInYears);
+        const titleLower = video.title.toLowerCase();
+        const channelLower = video.channel.toLowerCase();
+
+        if (video.contentType === "music") {
+          // +20 for official VEVO/artist channels
+          if (channelLower.includes("vevo") || video.isOfficial) {
+            compositeScore += 20;
+          }
+          // -30 for fan edits (identified by keywords: "reaction", "cover", "fan", "edit", "lyric fan")
+          const isFanEdit = ["reaction", "cover", "fan", "edit", "lyric fan"].some(keyword => titleLower.includes(keyword));
+          if (isFanEdit) {
+            compositeScore -= 30;
+          }
+        } else if (video.contentType === "educational") {
+          // +15 for established channels (Fireship, FreeCodeCamp, 3Blue1Brown, IBM Technology, LangChain)
+          const isEstablished = ["fireship", "freecodecamp", "3blue1brown", "ibm technology", "langchain"].some(ch => channelLower.includes(ch));
+          if (isEstablished) {
+            compositeScore += 15;
+          }
+          // -25 for Shorts content (identified by "#shorts" or "shorts")
+          const isShorts = titleLower.includes("#shorts") || titleLower.includes("shorts");
+          if (isShorts) {
+            compositeScore -= 25;
+          }
+        } else if (video.contentType === "sports") {
+          // +20 for official broadcasters
+          if (video.isOfficial || video.isVerifiedChannel) {
+            compositeScore += 20;
+          }
+          // -20 for fan uploads (identified by "fan clip", "random edit")
+          const isFanUpload = ["fan clip", "random edit", "fan upload", "fan video"].some(keyword => titleLower.includes(keyword));
+          if (isFanUpload) {
+            compositeScore -= 20;
+          }
+        }
       }
+
+      // Final relevance after content selection rules, bounded at [0.0, 1.0]
+      const finalRelevance = Math.min(Math.max(compositeScore / 100, 0.0), 1.0);
 
       return {
         video,
-        relevance, // Use relevance for confidence thresholds
+        relevance: finalRelevance, // Use final relevance for confidence thresholds
         compositeScore
       };
     });

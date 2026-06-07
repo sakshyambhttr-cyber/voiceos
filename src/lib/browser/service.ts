@@ -67,7 +67,7 @@ export const youtube = {
 };
 
 export interface BrowserActionPayload {
-  actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay";
+  actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay" | "wikipediaSearch";
   target: string;
 }
 
@@ -76,6 +76,7 @@ export function executeBrowserAction(action: BrowserActionPayload): void {
   const { actionType, target } = action;
   switch (actionType) {
     case "open":
+    case "wikipediaSearch":
       browser.open(target);
       break;
     case "googleSearch":

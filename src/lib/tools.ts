@@ -48,7 +48,7 @@ export interface Note {
 
 export interface BrowserAction {
   id: string;
-  actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay";
+  actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay" | "wikipediaSearch";
   target: string;
   createdAt: string;
 }
@@ -109,7 +109,7 @@ export interface ResearchComparison {
 
 export interface PendingAction {
   id: string;
-  type: "sendEmail" | "createEvent" | "deleteEvent";
+  type: "sendEmail" | "createEvent" | "deleteEvent" | "updateEvent";
   description: string;
   data: unknown;
 }
@@ -126,6 +126,25 @@ export interface YouTubeVideoStoreItem {
   isOfficial?: boolean;
 }
 
+export interface WorkflowStep {
+  step: number;
+  tool: "web_search" | "event_extractor" | "calendar" | "gmail" | "task_extractor" | "tasks" | "research" | "notes";
+  action: string;
+  status: "pending" | "completed" | "failed";
+  resultData?: any;
+}
+
+export interface WorkflowState {
+  workflow_id: string;
+  original_goal: string;
+  steps: WorkflowStep[];
+  completed_steps: number[];
+  failed_steps: number[];
+  current_step_index: number;
+  status: "idle" | "running" | "waiting_confirmation" | "completed" | "failed";
+  context: Record<string, any>;
+}
+
 export interface ToolStore {
   tasks: Task[];
   notes: Note[];
@@ -139,6 +158,13 @@ export interface ToolStore {
   learningInterests?: string[];
   researchHistory?: string[];
   youtubeSearchResults?: YouTubeVideoStoreItem[];
+  activeWorkflow?: WorkflowState | null;
+  calendarTokens?: {
+    accessToken: string;
+    refreshToken: string;
+    expiryDate: number;
+  } | null;
+  defaultCalendar?: "Personal" | "Work" | "Study";
 }
 
 export interface ToolResult {
