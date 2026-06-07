@@ -24,7 +24,7 @@ export class GeminiProvider implements LLMProvider {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: config.constants.geminiModel,
       systemInstruction: request.systemPrompt,
       generationConfig: {
         maxOutputTokens: request.maxTokens ?? 200,

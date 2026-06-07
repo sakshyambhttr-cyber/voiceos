@@ -38,7 +38,7 @@ export class GroqProvider implements LLMProvider {
     messages.push({ role: "user", content: request.prompt });
 
     const completion = await client.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: config.constants.groqModel,
       messages,
       max_tokens: request.maxTokens ?? 200,
       temperature: request.temperature ?? 0.4,

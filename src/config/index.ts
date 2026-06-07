@@ -15,7 +15,9 @@ export const config = {
   // System Constants
   constants: {
     murfStreamUrl: "https://global.api.murf.ai/v1/speech/stream",
-    openRouterDefaultModel: "mistralai/mistral-7b-instruct",
+    geminiModel: process.env.GEMINI_MODEL?.trim() || "gemini-1.5-flash",
+    groqModel: process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant",
+    openRouterModel: process.env.OPENROUTER_MODEL?.trim() || "mistralai/mistral-7b-instruct",
     voiceRules: `
 Output rules — your response will be spoken aloud by a TTS engine:
 - Plain spoken sentences only. Zero markdown, no bullet symbols, no dashes, no asterisks.

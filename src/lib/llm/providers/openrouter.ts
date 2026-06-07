@@ -23,7 +23,7 @@ export class OpenRouterProvider implements LLMProvider {
       throw new Error("OPENROUTER_API_KEY is not set or too short");
     }
 
-    const model = process.env.OPENROUTER_MODEL?.trim() || config.constants.openRouterDefaultModel;
+    const model = config.constants.openRouterModel;
 
     const client = new OpenAI({
       apiKey,
