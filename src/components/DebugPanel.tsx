@@ -1,10 +1,19 @@
 "use client";
 
 import React from "react";
+import type { WorkflowStep, WorkflowState } from "@/lib/tools";
+
+export interface DebugLog {
+  platform?: string | null;
+  action?: string | null;
+  extractedQuery?: string | null;
+  selectedTool?: string | null;
+  intent?: Record<string, unknown> | null;
+}
 
 interface DebugPanelProps {
-  debugLog: any;
-  activeWorkflow: any;
+  debugLog: DebugLog | null;
+  activeWorkflow?: WorkflowState | null;
   isVisible: boolean;
   onClose: () => void;
   defaultCalendar?: string;
@@ -127,7 +136,7 @@ export function DebugPanel({
               <div>
                 <span style={{ color: "hsl(200, 80%, 85%)" }}>Execution Plan:</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "6px" }}>
-                  {activeWorkflow.steps.map((step: any, idx: number) => {
+                  {activeWorkflow.steps.map((step: WorkflowStep, idx: number) => {
                     const isActive = activeWorkflow.current_step_index === idx;
                     const isCompleted = step.status === "completed";
                     const isFailed = step.status === "failed";

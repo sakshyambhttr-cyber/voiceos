@@ -120,7 +120,12 @@ export const planner = {
           const cleanText = response.text.replace(/```json/g, "").replace(/```/g, "").trim();
           const parsed = JSON.parse(cleanText);
           if (Array.isArray(parsed)) {
-            steps = parsed.map((s: any, idx: number) => ({
+            interface RawPlannerStep {
+              step?: number;
+              tool: "web_search" | "event_extractor" | "calendar" | "gmail" | "task_extractor" | "tasks" | "research" | "notes";
+              action: string;
+            }
+            steps = (parsed as RawPlannerStep[]).map((s, idx) => ({
               step: s.step || idx + 1,
               tool: s.tool,
               action: s.action,

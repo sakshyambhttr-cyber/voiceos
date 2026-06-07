@@ -131,7 +131,7 @@ export interface WorkflowStep {
   tool: "web_search" | "event_extractor" | "calendar" | "gmail" | "task_extractor" | "tasks" | "research" | "notes";
   action: string;
   status: "pending" | "completed" | "failed";
-  resultData?: any;
+  resultData?: unknown;
 }
 
 export interface WorkflowState {
@@ -142,6 +142,7 @@ export interface WorkflowState {
   failed_steps: number[];
   current_step_index: number;
   status: "idle" | "running" | "waiting_confirmation" | "completed" | "failed";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: Record<string, any>;
 }
 

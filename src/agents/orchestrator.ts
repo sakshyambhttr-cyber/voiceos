@@ -1,4 +1,5 @@
-import { type ToolStore, type ToolName, type PendingAction } from "@/lib/tools";
+import { type ToolStore, type ToolName, type PendingAction, type BrowserAction } from "@/lib/tools";
+import type { CalendarEventSchema } from "@/lib/calendar/types";
 import { gmailService } from "@/services/gmail";
 import { calendarService } from "@/services/calendar";
 import { youtubeService } from "@/services/youtube";
@@ -15,10 +16,13 @@ export interface OrchestrationResult {
   voiceResponse: string;
   updatedStore: ToolStore;
   activeTab?: "console" | "gmail" | "calendar" | "research" | "media";
-  browserAction?: any;
-  pendingAction?: any;
+  browserAction?: {
+    actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay" | "wikipediaSearch";
+    target: string;
+  };
+  pendingAction?: PendingAction | null;
   query?: string;
-  debugLog?: any;
+  debugLog?: Record<string, unknown>;
 }
 
 // Parses meeting times relative to mock session time: Sunday, June 7, 2026, 11:03 AM
@@ -149,7 +153,7 @@ export const orchestrator = {
             }
           };
         } else if (action.type === "createEvent") {
-          const res = await calendarService.commitEvent(store, action.data as any);
+          const res = await calendarService.commitEvent(store, action.data as CalendarEventSchema);
           return {
             tool: "confirmAction",
             success: true,
@@ -162,11 +166,11 @@ export const orchestrator = {
               action: "create",
               extractedQuery: "",
               selectedTool: "confirmAction",
-              selectedResult: `Event Committed: ${(action.data as any).title}`,
+              selectedResult: `Event Committed: ${(action.data as CalendarEventSchema).title}`,
             }
           };
         } else if (action.type === "updateEvent") {
-          const { eventId, updates } = action.data as { eventId: string; updates: any };
+          const { eventId, updates } = action.data as { eventId: string; updates: Partial<CalendarEventSchema> };
           const res = await calendarService.updateEvent(store, eventId, updates);
           return {
             tool: "confirmAction",

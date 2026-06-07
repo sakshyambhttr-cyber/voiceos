@@ -10,11 +10,17 @@ export interface CalendarEventSchema {
   calendarType?: "Personal" | "Work" | "Study";
 }
 
+export interface CalendarTokens {
+  accessToken: string;
+  refreshToken?: string;
+  expiryDate?: number;
+}
+
 export interface CalendarProvider {
   name: "Google Calendar" | "Mock Calendar" | "Outlook" | "Apple";
-  createEvent(event: CalendarEventSchema, tokens?: any): Promise<CalendarEventSchema>;
-  updateEvent(eventId: string, updates: Partial<CalendarEventSchema>, tokens?: any): Promise<CalendarEventSchema>;
-  deleteEvent(eventId: string, tokens?: any): Promise<boolean>;
-  listEvents(start: string, end: string, tokens?: any): Promise<CalendarEventSchema[]>;
-  getUpcomingEvents(maxResults?: number, tokens?: any): Promise<CalendarEventSchema[]>;
+  createEvent(event: CalendarEventSchema, tokens?: CalendarTokens): Promise<CalendarEventSchema>;
+  updateEvent(eventId: string, updates: Partial<CalendarEventSchema>, tokens?: CalendarTokens): Promise<CalendarEventSchema>;
+  deleteEvent(eventId: string, tokens?: CalendarTokens): Promise<boolean>;
+  listEvents(start: string, end: string, tokens?: CalendarTokens): Promise<CalendarEventSchema[]>;
+  getUpcomingEvents(maxResults?: number, tokens?: CalendarTokens): Promise<CalendarEventSchema[]>;
 }

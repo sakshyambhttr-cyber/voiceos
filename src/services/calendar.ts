@@ -1,7 +1,8 @@
 import { GoogleCalendarProvider } from "@/lib/calendar/providers/google";
 import { MockCalendarProvider } from "@/lib/calendar/providers/mock";
 import type { CalendarEventSchema, CalendarProvider } from "@/lib/calendar/types";
-import type { ToolStore, PendingAction } from "@/lib/tools";
+import type { ToolStore, PendingAction, CalendarEvent } from "@/lib/tools";
+import type { CalendarTokens } from "@/lib/calendar/types";
 
 function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -18,7 +19,7 @@ function isOverlapping(s1: Date, e1: Date, s2: Date, e2: Date): boolean {
 // Automatically handles OAuth token refresh if needed, and returns the correct provider
 async function getProviderAndTokens(store: ToolStore): Promise<{
   provider: CalendarProvider;
-  tokens: { accessToken: string } | null;
+  tokens?: CalendarTokens;
   updatedStore?: ToolStore;
 }> {
   const tokens = store.calendarTokens;
@@ -60,7 +61,7 @@ async function getProviderAndTokens(store: ToolStore): Promise<{
   }
 
   // Fallback to Mock Calendar
-  return { provider: MockCalendarProvider, tokens: null };
+  return { provider: MockCalendarProvider, tokens: undefined };
 }
 
 export const calendarService = {
@@ -83,9 +84,9 @@ export const calendarService = {
     try {
       const events = await provider.listEvents(startOfPeriod.toISOString(), endOfPeriod.toISOString(), tokens);
       
-      let storeWithEvents = { ...store, ...(updatedStore || {}) };
+      const storeWithEvents = { ...store, ...(updatedStore || {}) };
       // Sync local store
-      storeWithEvents.calendarEvents = events as any;
+      storeWithEvents.calendarEvents = events as unknown as CalendarEvent[];
 
       if (events.length === 0) {
         return {
@@ -107,7 +108,7 @@ export const calendarService = {
         updatedStore: storeWithEvents,
         providerName: provider.name,
       };
-    } catch (err: any) {
+    } catch (err) {
       console.error("[readCalendar] Error:", err);
       return {
         success: false,
@@ -125,7 +126,7 @@ export const calendarService = {
    */
   async scheduleEvent(store: ToolStore, title: string, startTimeIso: string, durationMinutes = 60) {
     const { provider, tokens, updatedStore } = await getProviderAndTokens(store);
-    let currentStore = { ...store, ...(updatedStore || {}) };
+    const currentStore = { ...store, ...(updatedStore || {}) };
 
     const newStart = new Date(startTimeIso);
     const newEnd = new Date(newStart.getTime() + durationMinutes * 60 * 1000);
@@ -191,7 +192,7 @@ export const calendarService = {
       const createdEvent = await provider.createEvent(newEvent, tokens);
 
       // Update local cache
-      currentStore.calendarEvents = [...(currentStore.calendarEvents || []), createdEvent as any];
+      currentStore.calendarEvents = [...(currentStore.calendarEvents || []), createdEvent as unknown as CalendarEvent];
 
       const dateStr = newStart.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
       const timeStr = formatTime(newStart);
@@ -204,7 +205,7 @@ export const calendarService = {
         updatedStore: currentStore,
         providerName: provider.name,
       };
-    } catch (err: any) {
+    } catch (err) {
       console.error("[scheduleEvent] Error:", err);
       return {
         success: false,
@@ -221,11 +222,11 @@ export const calendarService = {
    */
   async commitEvent(store: ToolStore, event: CalendarEventSchema) {
     const { provider, tokens, updatedStore } = await getProviderAndTokens(store);
-    let currentStore = { ...store, ...(updatedStore || {}) };
+    const currentStore = { ...store, ...(updatedStore || {}) };
 
     try {
       const createdEvent = await provider.createEvent(event, tokens);
-      currentStore.calendarEvents = [...(currentStore.calendarEvents || []), createdEvent as any];
+      currentStore.calendarEvents = [...(currentStore.calendarEvents || []), createdEvent as unknown as CalendarEvent];
       currentStore.pendingAction = null;
 
       return {
@@ -250,7 +251,7 @@ export const calendarService = {
    */
   async deleteEvent(store: ToolStore, eventId: string) {
     const { provider, tokens, updatedStore } = await getProviderAndTokens(store);
-    let currentStore = { ...store, ...(updatedStore || {}) };
+    const currentStore = { ...store, ...(updatedStore || {}) };
 
     try {
       const success = await provider.deleteEvent(eventId, tokens);
@@ -281,11 +282,11 @@ export const calendarService = {
    */
   async updateEvent(store: ToolStore, eventId: string, updates: Partial<CalendarEventSchema>) {
     const { provider, tokens, updatedStore } = await getProviderAndTokens(store);
-    let currentStore = { ...store, ...(updatedStore || {}) };
-
+    const currentStore = { ...store, ...(updatedStore || {}) };
+ 
     try {
       const updatedEvent = await provider.updateEvent(eventId, updates, tokens);
-      currentStore.calendarEvents = (currentStore.calendarEvents || []).map(e => e.id === eventId ? (updatedEvent as any) : e);
+      currentStore.calendarEvents = (currentStore.calendarEvents || []).map(e => e.id === eventId ? (updatedEvent as unknown as CalendarEvent) : e);
       currentStore.pendingAction = null;
 
       return {

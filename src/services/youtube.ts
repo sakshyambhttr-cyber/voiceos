@@ -287,8 +287,8 @@ export const youtubeService = {
   /**
    * Generates learning recommendations based on active goals, tasks, and interests
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getLearningRecommendations(store: ToolStore) {
-    const _activeInterests = store.learningInterests || [];
     const recommendations: YouTubeVideo[] = [];
 
     // NumPy related (from active goal Milestone 1)

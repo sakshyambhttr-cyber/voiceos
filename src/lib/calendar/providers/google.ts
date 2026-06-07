@@ -1,6 +1,23 @@
 import type { CalendarProvider, CalendarEventSchema } from "../types";
 
-function mapGoogleEventToSchema(event: any): CalendarEventSchema {
+interface GoogleCalendarEvent {
+  id: string;
+  summary?: string;
+  description?: string;
+  start?: {
+    dateTime?: string;
+    date?: string;
+    timeZone?: string;
+  };
+  end?: {
+    dateTime?: string;
+    date?: string;
+    timeZone?: string;
+  };
+  location?: string;
+}
+
+function mapGoogleEventToSchema(event: GoogleCalendarEvent): CalendarEventSchema {
   return {
     id: event.id,
     title: event.summary || "Untitled Event",

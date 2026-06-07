@@ -2,10 +2,11 @@ import { llmRouter } from "@/lib/llm";
 import { calendarService } from "@/services/calendar";
 import { gmailService } from "@/services/gmail";
 import { researchService } from "@/services/research";
-import { toolCreateTask, toolCreateNote, type ToolStore, type WorkflowState, type WorkflowStep } from "../tools";
+import type { CalendarEventSchema } from "@/lib/calendar/types";
+import { toolCreateTask, toolCreateNote, type ToolStore, type WorkflowState } from "../tools";
 
 // Simulates a web search using LLM to generate realistic search results
-async function executeWebSearch(action: string, context: any): Promise<string> {
+async function executeWebSearch(action: string): Promise<string> {
   // If F1 race search, return the Japanese Grand Prix on April 5, 2027 at 14:00 JST
   if (action.toLowerCase().includes("f1") || action.toLowerCase().includes("formula")) {
     return "The next Formula 1 race is the Japanese Grand Prix, which will take place on April 5, 2027, at 14:00 JST.";
@@ -74,9 +75,9 @@ Return ONLY JSON, no explanation, no markdown.`;
         duration: parsed.duration || 60,
       };
     }
-  } catch (err: any) {
+  } catch (err) {
     console.error("[Executor extractor] LLM parsing failed, using fallback:", err);
-    if (err.message && err.message.includes("Unable to identify")) {
+    if (err instanceof Error && err.message.includes("Unable to identify")) {
       throw err;
     }
   }
@@ -141,7 +142,7 @@ export async function executeWorkflow(
   isConfirmed = false
 ): Promise<{ voiceResponse: string; updatedStore: ToolStore }> {
   let currentStore = { ...store };
-  let currentWorkflow = { ...workflow };
+  const currentWorkflow = { ...workflow };
   let voiceResponse = "";
   
   const steps = currentWorkflow.steps;
@@ -160,7 +161,7 @@ export async function executeWorkflow(
       switch (step.tool) {
         case "web_search": {
           const query = step.action;
-          const searchResult = await executeWebSearch(query, currentWorkflow.context);
+          const searchResult = await executeWebSearch(query);
           step.status = "completed";
           step.resultData = searchResult;
           currentWorkflow.completed_steps.push(step.step);
@@ -190,7 +191,7 @@ export async function executeWorkflow(
             // Confirmation received! Commit the staged event
             if (currentStore.pendingAction && currentStore.pendingAction.type === "createEvent") {
               const eventData = currentStore.pendingAction.data;
-              const res = await calendarService.commitEvent(currentStore, eventData as any);
+              const res = await calendarService.commitEvent(currentStore, eventData as CalendarEventSchema);
               currentStore = res.updatedStore;
               voiceResponse = res.voiceResponse;
               step.status = "completed";
@@ -241,16 +242,15 @@ export async function executeWorkflow(
         }
         
         case "tasks": {
-          const tasksList = currentWorkflow.context.tasksList || [];
+          const tasksList = (currentWorkflow.context.tasksList || []) as { title: string; dueDate?: string }[];
           if (tasksList.length === 0) {
             voiceResponse = "I scanned the messages but didn't find any actionable tasks.";
           } else {
-            let res: any;
             for (const t of tasksList) {
-              res = toolCreateTask(`${t.title}${t.dueDate ? " due " + t.dueDate : ""}`, currentStore);
+              const res = toolCreateTask(`${t.title}${t.dueDate ? " due " + t.dueDate : ""}`, currentStore);
               currentStore = res.updatedStore;
             }
-            voiceResponse = `I read your emails and registered ${tasksList.length} tasks: ` + tasksList.map((t: any) => t.title).join(", ") + ".";
+            voiceResponse = `I read your emails and registered ${tasksList.length} tasks: ` + tasksList.map((t) => t.title).join(", ") + ".";
           }
           step.status = "completed";
           step.resultData = tasksList;
@@ -301,14 +301,15 @@ export async function executeWorkflow(
       }
       
       currentWorkflow.current_step_index++;
-    } catch (err: any) {
+    } catch (err) {
       console.error(`[Executor] Error on step ${step.step}:`, err);
       step.status = "failed";
       currentWorkflow.failed_steps.push(step.step);
       currentWorkflow.status = "failed";
       currentStore.activeWorkflow = currentWorkflow;
+      const errMsg = err instanceof Error ? err.message : String(err);
       return {
-        voiceResponse: `I ran into an issue while executing the plan at step ${step.step}. ${err.message || ""}`,
+        voiceResponse: `I ran into an issue while executing the plan at step ${step.step}. ${errMsg}`,
         updatedStore: currentStore,
       };
     }

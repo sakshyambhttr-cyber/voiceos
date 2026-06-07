@@ -14,7 +14,7 @@ import { CommunicationPanel } from "@/components/CommunicationPanel";
 import { CalendarPanel } from "@/components/CalendarPanel";
 import { ResearchPanel } from "@/components/ResearchPanel";
 import { MediaPanel } from "@/components/MediaPanel";
-import { DebugPanel } from "@/components/DebugPanel";
+import { DebugPanel, type DebugLog } from "@/components/DebugPanel";
 
 // 3. Types and local imports
 import type { AgentMode, MemoryTurn } from "./api/agent/route";
@@ -123,7 +123,7 @@ function speechErrorMessage(code: string): { text: string; showTextFallback: boo
 export default function VoiceAgentOS() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [memory, setMemory] = useState<MemoryTurn[]>([]);
-  const [debugLog, setDebugLog] = useState<any>(null);
+  const [debugLog, setDebugLog] = useState<DebugLog | null>(null);
   const [showDebug, setShowDebug] = useState<boolean>(false);
   const [store, setStore] = useState<ToolStore>(() => {
     return {
@@ -867,10 +867,12 @@ export default function VoiceAgentOS() {
           expiryDate
         };
 
-        setStore(prev => ({
-          ...prev,
-          calendarTokens
-        }));
+        setTimeout(() => {
+          setStore(prev => ({
+            ...prev,
+            calendarTokens
+          }));
+        }, 0);
 
         const cleanUrl = window.location.pathname;
         window.history.replaceState({}, document.title, cleanUrl);
