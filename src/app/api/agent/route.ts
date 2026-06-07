@@ -13,6 +13,8 @@ import {
 } from "@/lib/tools";
 import { detectGoalIntent, createGoalPlan, summariseGoals, goalStore } from "@/lib/goals";
 import { requiresCouncil, runCouncil } from "@/lib/council";
+import { detectBrowserIntent, handleBrowserAction } from "@/lib/browser";
+import { orchestrator } from "@/agents/orchestrator";
 import { config } from "@/config";
 
 /* ─── Types ──────────────────────────────────────────────────── */
@@ -42,6 +44,20 @@ function buildMemoryContext(memory: MemoryTurn[]): string {
   return `\n\nSession memory (${memory.length} turns):\n${lines.join("\n\n")}`;
 }
 
+function buildStoreContext(store: ToolStore): string {
+  let ctx = "";
+  if (store.emails && store.emails.length > 0) {
+    ctx += "\n\nUser's Inbox:\n" + store.emails.map(e => `- From: ${e.sender}, Subject: "${e.subject}", Priority: ${e.priority}, Summary: "${e.summary}"${e.unread ? " (Unread)" : ""}`).join("\n");
+  }
+  if (store.calendarEvents && store.calendarEvents.length > 0) {
+    ctx += "\n\nUser's Schedule:\n" + store.calendarEvents.map(e => `- Event: "${e.title}", Start: ${new Date(e.startTime).toLocaleString()}, End: ${new Date(e.endTime).toLocaleString()}`).join("\n");
+  }
+  if (store.drafts && store.drafts.length > 0) {
+    ctx += "\n\nStaged Email Drafts:\n" + store.drafts.map(d => `- To: ${d.to}, Subject: "${d.subject}", Created: ${new Date(d.createdAt).toLocaleString()}`).join("\n");
+  }
+  return ctx;
+}
+
 /* ─── Route handler ──────────────────────────────────────────── */
 export async function POST(req: NextRequest) {
   try {
@@ -64,9 +80,31 @@ export async function POST(req: NextRequest) {
     const safeStore: ToolStore = {
       tasks: Array.isArray(store?.tasks) ? store.tasks : [],
       notes: Array.isArray(store?.notes) ? store.notes : [],
+      browserActions: Array.isArray(store?.browserActions) ? store.browserActions : [],
+      emails: Array.isArray(store?.emails) ? store.emails : [],
+      drafts: Array.isArray(store?.drafts) ? store.drafts : [],
+      calendarEvents: Array.isArray(store?.calendarEvents) ? store.calendarEvents : [],
+      researchPapers: Array.isArray(store?.researchPapers) ? store.researchPapers : [],
+      comparisons: Array.isArray(store?.comparisons) ? store.comparisons : [],
+      pendingAction: store?.pendingAction || null,
+      learningInterests: Array.isArray(store?.learningInterests) ? store.learningInterests : [],
+      researchHistory: Array.isArray(store?.researchHistory) ? store.researchHistory : [],
     };
 
     const text = message.trim();
+
+    // ─── Step 0: Run unified orchestrator for productivity agents ───
+    const orchestrationResult = orchestrator.process(text, safeStore);
+    if (orchestrationResult) {
+      return NextResponse.json({
+        response: orchestrationResult.voiceResponse,
+        toolUsed: orchestrationResult.tool,
+        updatedStore: orchestrationResult.updatedStore,
+        activeTab: orchestrationResult.activeTab,
+        browserAction: orchestrationResult.browserAction,
+        mode: activeMode,
+      });
+    }
 
     /* ── Step 1a: Goal intent detection ── */
     const goalIntent = detectGoalIntent(text);
@@ -144,6 +182,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    /* ── Step 1c: Browser Action intent detection ── */
+    const browserIntent = detectBrowserIntent(text);
+
+    if (browserIntent !== "none") {
+      const r = handleBrowserAction(browserIntent, text, safeStore);
+      return NextResponse.json({
+        response: r.voiceResponse,
+        toolUsed: r.tool,
+        updatedStore: r.updatedStore,
+        browserAction: r.browserAction,
+        mode: activeMode,
+      });
+    }
+
     /* ── Step 2: Council check — complex requests ── */
     if (requiresCouncil(text)) {
       const councilResult = await runCouncil({
@@ -184,7 +236,7 @@ export async function POST(req: NextRequest) {
         systemPromptBase = SYSTEM_PROMPTS.general;
       }
     }
-    const systemPrompt = systemPromptBase + buildMemoryContext(safeMemory);
+    const systemPrompt = systemPromptBase + buildMemoryContext(safeMemory) + buildStoreContext(safeStore);
 
     // Convert MemoryTurn[] → ChatTurn[] for the LLM layer
     const history: ChatTurn[] = safeMemory.flatMap((t) => [

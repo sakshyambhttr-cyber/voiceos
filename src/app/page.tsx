@@ -10,10 +10,15 @@ import { TaskPanel } from "@/components/TaskPanel";
 import { AgentActivityIndicator } from "@/components/AgentActivityIndicator";
 import { CommandFeed } from "@/components/CommandFeed";
 import { VoiceControlCore } from "@/components/VoiceControlCore";
+import { CommunicationPanel } from "@/components/CommunicationPanel";
+import { CalendarPanel } from "@/components/CalendarPanel";
+import { ResearchPanel } from "@/components/ResearchPanel";
+import { MediaPanel } from "@/components/MediaPanel";
 
 // 3. Types and local imports
 import type { AgentMode, MemoryTurn } from "./api/agent/route";
 import type { ToolStore } from "@/lib/tools";
+import { executeBrowserAction } from "@/lib/browser";
 import type { Goal, MilestoneStatus } from "@/lib/goals/types";
 import type { CouncilResult, AgentProgressEvent } from "@/lib/council/types";
 import type { Recommendation } from "@/lib/recommendations/engine";
@@ -151,6 +156,103 @@ export default function VoiceAgentOS() {
           createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
         },
       ],
+      browserActions: [],
+      emails: [
+        {
+          id: "email-1",
+          sender: "Murf AI Support",
+          senderEmail: "support@murf.ai",
+          subject: "Falcon Voice API Update",
+          priority: "high",
+          summary: "Notification about Falcon Voice API update to version 2.",
+          body: "Hello, we have updated our text-to-speech engine to Falcon v2. Let us know if you need assistance integrating it.",
+          date: "Today, 9:30 AM",
+          unread: true
+        },
+        {
+          id: "email-2",
+          sender: "Professor Alistair",
+          senderEmail: "alistair@university.edu",
+          subject: "Electronics Final Exam Date",
+          priority: "high",
+          summary: "Final electronics exam scheduled for next Friday at 10 AM in Hall B.",
+          body: "Dear class, the final electronics exam will be held next Friday at 10:00 AM in Hall B.",
+          date: "Yesterday, 2:15 PM",
+          unread: false
+        },
+        {
+          id: "email-3",
+          sender: "Github Security",
+          senderEmail: "noreply@github.com",
+          subject: "Security Alert: npm dependency vulnerability",
+          priority: "medium",
+          summary: "Security alert regarding a vulnerable dependency in package.json.",
+          body: "We found a known vulnerability in one of your dependencies. Please review and update package.json.",
+          date: "2 days ago",
+          unread: true
+        }
+      ],
+      drafts: [],
+      calendarEvents: [
+        {
+          id: "cal-1",
+          title: "Electronics Lecture - Chapters 7 & 8",
+          description: "Studying op-amps and filter designs.",
+          startTime: "2026-06-07T13:00:00.000Z",
+          endTime: "2026-06-07T14:30:00.000Z",
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: "cal-2",
+          title: "Study Group - NumPy Exercises",
+          description: "Solve array manipulation exercises with classmates.",
+          startTime: "2026-06-08T14:00:00.000Z",
+          endTime: "2026-06-08T15:30:00.000Z",
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: "cal-3",
+          title: "SaaS Launch Sync",
+          description: "Align on MVP launch roadmap features.",
+          startTime: "2026-06-09T10:00:00.000Z",
+          endTime: "2026-06-09T11:00:00.000Z",
+          createdAt: new Date().toISOString()
+        }
+      ],
+      researchPapers: [
+        {
+          id: "paper-attention",
+          title: "Attention Is All You Need",
+          authors: "Vaswani et al. (2017)",
+          summary: "This paper proposes the Transformer, a new network architecture based solely on self-attention mechanisms, dispensing with recurrence and convolutions entirely.",
+          keyContributions: "Introduces the Transformer model. Proves self-attention can replace RNNs/CNNs in sequence-to-sequence tasks. Achieves state-of-the-art BLEU scores.",
+          methodology: "Uses Multi-Head Attention to compute representations of input/output sequences without sequential alignment. Employs Positional Encoding to retain order.",
+          strengths: "Significantly faster training due to high parallelization. Captures long-range dependencies effectively regardless of distance in the sequence.",
+          weaknesses: "Requires massive datasets for effective generalization. Memory complexity is quadratic with sequence length, making long document processing expensive.",
+          implementationDifficulty: "Medium-High",
+          actionableInsights: "Utilize pre-trained self-attention layers for downstream NLP tasks. Apply sequence length limits to prevent out-of-memory errors during training.",
+          createdAt: new Date().toISOString()
+        }
+      ],
+      comparisons: [
+        {
+          id: "comp-seed",
+          title: "PyTorch vs TensorFlow",
+          items: ["PyTorch", "TensorFlow"],
+          table: [
+            { metric: "Ease of Use", values: ["Excellent (Imperative)", "Medium (Declarative)"] },
+            { metric: "Execution Model", values: ["Dynamic Graph (Eager)", "Static Graph / Eager"] },
+            { metric: "Deployment", values: ["Improving (TorchScript)", "Excellent (TF Serving)"] },
+            { metric: "Community Support", values: ["Massive Academic Adoption", "Massive Industry Adoption"] },
+          ],
+          summary: "PyTorch is highly dynamic and developer-friendly, while TensorFlow excels in distributed production scaling.",
+          recommendation: "Use PyTorch for rapid prototyping, academic research, and custom networks. Choose TensorFlow for enterprise-scale deployments.",
+          createdAt: new Date().toISOString()
+        }
+      ],
+      pendingAction: null,
+      learningInterests: ["NumPy Basics", "Machine Learning"],
+      researchHistory: [],
     };
   });
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -173,6 +275,7 @@ export default function VoiceAgentOS() {
   const [supported, setSupported] = useState(true);
   const [murfEnabled, setMurfEnabled] = useState(true);
   const [selectedVoice, setSelectedVoice] = useState("en-US-amara");
+  const [activeCenterTab, setActiveCenterTab] = useState<"console" | "gmail" | "calendar" | "research" | "media">("console");
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -186,7 +289,19 @@ export default function VoiceAgentOS() {
   // Ref so sendToAgent always reads latest memory without stale closure
   const memoryRef = useRef<MemoryTurn[]>([]);
   // Ref so sendToAgent always reads latest tool store without stale closure
-  const storeRef = useRef<ToolStore>({ tasks: [], notes: [] });
+  const storeRef = useRef<ToolStore>({
+    tasks: [],
+    notes: [],
+    browserActions: [],
+    emails: [],
+    drafts: [],
+    calendarEvents: [],
+    researchPapers: [],
+    comparisons: [],
+    pendingAction: null,
+    learningInterests: [],
+    researchHistory: []
+  });
   // Interruption System refs
   const interruptionRecognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const isInterruptedRef = useRef(false);
@@ -668,6 +783,14 @@ export default function VoiceAgentOS() {
           setStore(data.updatedStore);
         }
 
+        if (data.activeTab) {
+          setActiveCenterTab(data.activeTab);
+        }
+
+        if (data.browserAction) {
+          executeBrowserAction(data.browserAction);
+        }
+
         if (data.goal) {
           setGoals((prev) => {
             const exists = prev.find((g) => g.id === data.goal.id);
@@ -903,6 +1026,32 @@ export default function VoiceAgentOS() {
         type: "tool",
         label: "Note Cataloged",
         content: `Note context captured: "${note.content.slice(0, 60)}..."`,
+      });
+    });
+
+    // 4b. Add Browser Actions
+    store.browserActions?.forEach((action) => {
+      let label = "Browser Action";
+      let content = "";
+      if (action.actionType === "open") {
+        label = "Website Opened";
+        content = `Opened ${action.target}`;
+      } else if (action.actionType === "googleSearch") {
+        label = "Google Search";
+        content = `Searched Google for "${action.target}"`;
+      } else if (action.actionType === "youtubeSearch") {
+        label = "YouTube Search";
+        content = `Searched YouTube for "${action.target}"`;
+      } else if (action.actionType === "youtubePlay") {
+        label = "YouTube Play";
+        content = `Playing "${action.target}" on YouTube`;
+      }
+      feed.push({
+        id: `feed-browser-${action.id}`,
+        timestamp: new Date(action.createdAt),
+        type: "tool",
+        label,
+        content,
       });
     });
 
@@ -1284,219 +1433,304 @@ export default function VoiceAgentOS() {
               </div>
             )}
 
-            {/* Daily Briefing */}
-            {dailyBriefing && (
-              <div
-                className="panel-card panel-enter"
-                style={{
-                  padding: "16px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "12px",
-                  flexShrink: 0,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    borderBottom: "1px solid var(--border-subtle)",
-                    paddingBottom: "10px",
-                  }}
-                >
-                  <span className="label-system" style={{ color: "hsl(220, 80%, 65%)" }}>
-                    Daily Briefing
-                  </span>
+            {/* Premium Tab bar */}
+            <div
+              style={{
+                display: "flex",
+                borderBottom: "1px solid var(--border-subtle)",
+                paddingBottom: "8px",
+                gap: "8px",
+                flexShrink: 0,
+                overflowX: "auto",
+              }}
+            >
+              {(["console", "gmail", "calendar", "research", "media"] as const).map((tab) => {
+                const isActive = activeCenterTab === tab;
+                let label = "";
+                let icon = "";
+                if (tab === "console") { label = "Console Log"; icon = "📟"; }
+                else if (tab === "gmail") { label = "Communication Activity"; icon = "✉️"; }
+                else if (tab === "calendar") { label = "Calendar Activity"; icon = "📅"; }
+                else if (tab === "research") { label = "Research Activity"; icon = "🔬"; }
+                else if (tab === "media") { label = "Media Activity"; icon = "📺"; }
+
+                return (
                   <button
-                    id="speak-briefing-btn"
-                    onClick={() => playVoice(dailyBriefing)}
+                    key={tab}
+                    onClick={() => setActiveCenterTab(tab)}
                     className="btn-system"
-                    disabled={isBusy}
-                    style={{ fontSize: "10px" }}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                      <polygon points="3 2 11 7 3 12 3 2" fill="currentColor" />
-                    </svg>
-                    Speak
-                  </button>
-                </div>
-
-                <p style={{ fontSize: "13px", color: "var(--text-primary)", lineHeight: 1.65 }}>
-                  {dailyBriefing}
-                </p>
-
-                {/* Daily focus callout */}
-                {dailyFocus && (
-                  <div
                     style={{
+                      padding: "5px 12px",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      background: isActive ? "var(--bg-4)" : "transparent",
+                      borderColor: isActive ? "var(--border-strong)" : "transparent",
+                      color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
                       display: "flex",
-                      alignItems: "flex-start",
-                      gap: "10px",
-                      padding: "10px 12px",
+                      alignItems: "center",
+                      gap: "6px",
+                      cursor: "pointer",
                       borderRadius: "var(--radius-sm)",
-                      border: "1px solid var(--border-subtle)",
-                      background: "var(--bg-base)",
                     }}
                   >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 12 12"
-                      fill="none"
-                      style={{ flexShrink: 0, marginTop: "2px" }}
-                      aria-hidden="true"
+                    <span>{icon}</span>
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Tab Contents */}
+            {activeCenterTab === "console" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px", flex: 1 }}>
+                {/* Daily Briefing */}
+                {dailyBriefing && (
+                  <div
+                    className="panel-card panel-enter"
+                    style={{
+                      padding: "16px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "12px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        borderBottom: "1px solid var(--border-subtle)",
+                        paddingBottom: "10px",
+                      }}
                     >
-                      <circle cx="6" cy="6" r="5" stroke="hsl(220, 80%, 60%)" strokeWidth="1" />
-                      <circle cx="6" cy="6" r="2" fill="hsl(220, 80%, 60%)" />
-                    </svg>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                      <span className="label-system" style={{ fontSize: "9px" }}>
-                        Active Focus
+                      <span className="label-system" style={{ color: "hsl(220, 80%, 65%)" }}>
+                        Daily Briefing
                       </span>
-                      <span
-                        style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)" }}
+                      <button
+                        id="speak-briefing-btn"
+                        onClick={() => playVoice(dailyBriefing)}
+                        className="btn-system"
+                        disabled={isBusy}
+                        style={{ fontSize: "10px" }}
                       >
-                        {dailyFocus}
-                      </span>
+                        <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                          <polygon points="3 2 11 7 3 12 3 2" fill="currentColor" />
+                        </svg>
+                        Speak
+                      </button>
                     </div>
+
+                    <p style={{ fontSize: "13px", color: "var(--text-primary)", lineHeight: 1.65 }}>
+                      {dailyBriefing}
+                    </p>
+
+                    {/* Daily focus callout */}
+                    {dailyFocus && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "10px",
+                          padding: "10px 12px",
+                          borderRadius: "var(--radius-sm)",
+                          border: "1px solid var(--border-subtle)",
+                          background: "var(--bg-base)",
+                        }}
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 12 12"
+                          fill="none"
+                          style={{ flexShrink: 0, marginTop: "2px" }}
+                          aria-hidden="true"
+                        >
+                          <circle cx="6" cy="6" r="5" stroke="hsl(220, 80%, 60%)" strokeWidth="1" />
+                          <circle cx="6" cy="6" r="2" fill="hsl(220, 80%, 60%)" />
+                        </svg>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                          <span className="label-system" style={{ fontSize: "9px" }}>
+                            Active Focus
+                          </span>
+                          <span
+                            style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)" }}
+                          >
+                            {dailyFocus}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Recommendations */}
+                {recommendations.length > 0 && (
+                  <div
+                    className="panel-enter"
+                    style={{ display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}
+                  >
+                    <span className="label-system">Proactive Insights</span>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "8px",
+                      }}
+                    >
+                      {recommendations.map((rec) => (
+                        <div
+                          key={rec.id}
+                          className="panel-card"
+                          style={{
+                            padding: "12px",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "8px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              borderBottom: "1px solid var(--border-subtle)",
+                              paddingBottom: "6px",
+                            }}
+                          >
+                            <span className={`badge badge--${rec.priority}`}>{rec.priority}</span>
+                            <span className="label-system" style={{ fontSize: "9px" }}>
+                              {rec.type.replace(/-/g, " ")}
+                            </span>
+                          </div>
+                          <p
+                            style={{
+                              fontSize: "11px",
+                              color: "var(--text-secondary)",
+                              lineHeight: 1.5,
+                              margin: 0,
+                            }}
+                          >
+                            {rec.description}
+                          </p>
+                          {rec.actionLabel && (
+                            <button
+                              onClick={() => {
+                                if (rec.targetGoalId) setLeftSidebarTab("goals");
+                                else setLeftSidebarTab("tasks-notes");
+                              }}
+                              className="btn-ghost"
+                              style={{ alignSelf: "flex-start", padding: "3px 8px", fontSize: "10px" }}
+                            >
+                              {rec.actionLabel}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* System Response Output */}
+                {lastResponse && (
+                  <div
+                    className="panel-enter"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      flex: 1,
+                      minHeight: "120px",
+                    }}
+                  >
+                    <span className="label-system">System Response</span>
+                    <div
+                      style={{
+                        flex: 1,
+                        padding: "16px",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--border-soft)",
+                        background: "var(--bg-1)",
+                        overflowY: "auto",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "12px",
+                        lineHeight: 1.7,
+                        color: "var(--text-primary)",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {lastResponse}
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty / Ready state */}
+                {!lastResponse && recommendations.length === 0 && !dailyBriefing && (
+                  <div
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "10px",
+                      textAlign: "center",
+                      padding: "40px",
+                      opacity: 0.5,
+                    }}
+                  >
+                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+                      <circle cx="14" cy="14" r="12" stroke="var(--border-mid)" strokeWidth="1" />
+                      <circle cx="14" cy="14" r="4" fill="var(--border-mid)" />
+                    </svg>
+                    <p className="label-system">Console ready</p>
+                    <p
+                      style={{
+                        fontSize: "11px",
+                        color: "var(--text-muted)",
+                        maxWidth: "240px",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      Press Space to activate voice input, or type a command below.
+                    </p>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Recommendations */}
-            {recommendations.length > 0 && (
-              <div
-                className="panel-enter"
-                style={{ display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}
-              >
-                <span className="label-system">Proactive Insights</span>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "8px",
-                  }}
-                >
-                  {recommendations.map((rec) => (
-                    <div
-                      key={rec.id}
-                      className="panel-card"
-                      style={{
-                        padding: "12px",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "8px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          borderBottom: "1px solid var(--border-subtle)",
-                          paddingBottom: "6px",
-                        }}
-                      >
-                        <span className={`badge badge--${rec.priority}`}>{rec.priority}</span>
-                        <span className="label-system" style={{ fontSize: "9px" }}>
-                          {rec.type.replace(/-/g, " ")}
-                        </span>
-                      </div>
-                      <p
-                        style={{
-                          fontSize: "11px",
-                          color: "var(--text-secondary)",
-                          lineHeight: 1.5,
-                          margin: 0,
-                        }}
-                      >
-                        {rec.description}
-                      </p>
-                      {rec.actionLabel && (
-                        <button
-                          onClick={() => {
-                            if (rec.targetGoalId) setLeftSidebarTab("goals");
-                            else setLeftSidebarTab("tasks-notes");
-                          }}
-                          className="btn-ghost"
-                          style={{ alignSelf: "flex-start", padding: "3px 8px", fontSize: "10px" }}
-                        >
-                          {rec.actionLabel}
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {activeCenterTab === "gmail" && (
+              <CommunicationPanel
+                store={store}
+                onSendConfirm={(confirm) => sendToAgent(confirm ? "confirm" : "cancel")}
+                isBusy={isBusy}
+              />
             )}
 
-            {/* System Response Output */}
-            {lastResponse && (
-              <div
-                className="panel-enter"
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
-                  flex: 1,
-                  minHeight: "120px",
-                }}
-              >
-                <span className="label-system">System Response</span>
-                <div
-                  style={{
-                    flex: 1,
-                    padding: "16px",
-                    borderRadius: "var(--radius-md)",
-                    border: "1px solid var(--border-soft)",
-                    background: "var(--bg-1)",
-                    overflowY: "auto",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "12px",
-                    lineHeight: 1.7,
-                    color: "var(--text-primary)",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {lastResponse}
-                </div>
-              </div>
+            {activeCenterTab === "calendar" && (
+              <CalendarPanel
+                store={store}
+                onEventConfirm={(confirm) => sendToAgent(confirm ? "confirm" : "cancel")}
+                isBusy={isBusy}
+              />
             )}
 
-            {/* Empty / Ready state */}
-            {!lastResponse && recommendations.length === 0 && !dailyBriefing && (
-              <div
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "10px",
-                  textAlign: "center",
-                  padding: "40px",
-                  opacity: 0.5,
-                }}
-              >
-                <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
-                  <circle cx="14" cy="14" r="12" stroke="var(--border-mid)" strokeWidth="1" />
-                  <circle cx="14" cy="14" r="4" fill="var(--border-mid)" />
-                </svg>
-                <p className="label-system">Console ready</p>
-                <p
-                  style={{
-                    fontSize: "11px",
-                    color: "var(--text-muted)",
-                    maxWidth: "240px",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Press Space to activate voice input, or type a command below.
-                </p>
-              </div>
+            {activeCenterTab === "research" && (
+              <ResearchPanel
+                store={store}
+                onUploadSimulate={(fileName) => sendToAgent(`Analyze research paper ${fileName.replace(".pdf", "")}`)}
+                isBusy={isBusy}
+              />
+            )}
+
+            {activeCenterTab === "media" && (
+              <MediaPanel
+                store={store}
+                onSearch={(query) => sendToAgent(`Search YouTube for ${query}`)}
+                onPlayVideo={(vid) => sendToAgent(`Play ${vid.title}`)}
+                isBusy={isBusy}
+              />
             )}
           </div>
         </main>

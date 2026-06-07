@@ -3,7 +3,33 @@
    All tools execute locally (no DB). Storage passed in/out.
 ───────────────────────────────────────────────────────────── */
 
-export type ToolName = "createTask" | "createNote" | "getTasks" | "getNotes" | "calculate" | "none";
+export type ToolName =
+  | "createTask"
+  | "createNote"
+  | "getTasks"
+  | "getNotes"
+  | "calculate"
+  | "openWebsite"
+  | "googleSearch"
+  | "youtubeSearch"
+  | "youtubePlay"
+  | "readInbox"
+  | "draftEmail"
+  | "sendEmail"
+  | "readCalendar"
+  | "scheduleEvent"
+  | "conflictCheck"
+  | "morningBriefing"
+  | "youtubeSearchMedia"
+  | "youtubePlayMedia"
+  | "youtubeEducational"
+  | "youtubeRecommendations"
+  | "researchPaper"
+  | "researchDocs"
+  | "researchCompare"
+  | "confirmAction"
+  | "cancelAction"
+  | "none";
 
 export interface Task {
   id: string;
@@ -18,9 +44,86 @@ export interface Note {
   createdAt: string;
 }
 
+export interface BrowserAction {
+  id: string;
+  actionType: "open" | "googleSearch" | "youtubeSearch" | "youtubePlay";
+  target: string;
+  createdAt: string;
+}
+
+export interface GmailEmail {
+  id: string;
+  sender: string;
+  senderEmail: string;
+  subject: string;
+  priority: "high" | "medium" | "low";
+  summary: string;
+  body: string;
+  date: string;
+  unread: boolean;
+}
+
+export interface GmailDraft {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  startTime: string; // ISO string
+  endTime: string; // ISO string
+  isReminder?: boolean;
+  createdAt: string;
+}
+
+export interface ResearchPaper {
+  id: string;
+  title: string;
+  authors: string;
+  summary: string;
+  keyContributions: string;
+  methodology: string;
+  strengths: string;
+  weaknesses: string;
+  implementationDifficulty: string;
+  actionableInsights: string;
+  createdAt: string;
+}
+
+export interface ResearchComparison {
+  id: string;
+  title: string;
+  items: string[];
+  table: { metric: string; values: string[] }[];
+  summary: string;
+  recommendation: string;
+  createdAt: string;
+}
+
+export interface PendingAction {
+  id: string;
+  type: "sendEmail" | "createEvent" | "deleteEvent";
+  description: string;
+  data: unknown;
+}
+
 export interface ToolStore {
   tasks: Task[];
   notes: Note[];
+  browserActions?: BrowserAction[];
+  emails?: GmailEmail[];
+  drafts?: GmailDraft[];
+  calendarEvents?: CalendarEvent[];
+  researchPapers?: ResearchPaper[];
+  comparisons?: ResearchComparison[];
+  pendingAction?: PendingAction | null;
+  learningInterests?: string[];
+  researchHistory?: string[];
 }
 
 export interface ToolResult {
