@@ -274,22 +274,26 @@ export const orchestrator = {
         }
 
         const res = YouTubePlayTool.execute(query, store);
-        const newAction = {
-          id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-          actionType: "youtubePlay" as const,
-          target: res.videoUrl || query,
-          createdAt: new Date().toISOString(),
-        };
-        const updatedStore = {
-          ...store,
-          browserActions: [...(store.browserActions || []), newAction]
-        };
+        
+        let currentStore = res.updatedStore || store;
+        if (res.browserAction) {
+          const newAction = {
+            id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            actionType: "youtubePlay" as const,
+            target: res.videoUrl || query,
+            createdAt: new Date().toISOString(),
+          };
+          currentStore = {
+            ...currentStore,
+            browserActions: [...(currentStore.browserActions || []), newAction]
+          };
+        }
 
         return {
           tool: "youtubePlayMedia",
           success: true,
           voiceResponse: res.voiceResponse,
-          updatedStore,
+          updatedStore: currentStore,
           activeTab: "media",
           browserAction: res.browserAction,
         };
@@ -308,22 +312,26 @@ export const orchestrator = {
         }
 
         const res = YouTubeSearchTool.execute(query, store);
-        const newAction = {
-          id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-          actionType: "youtubeSearch" as const,
-          target: query,
-          createdAt: new Date().toISOString(),
-        };
-        const updatedStore = {
-          ...store,
-          browserActions: [...(store.browserActions || []), newAction]
-        };
+        
+        let currentStore = res.updatedStore || store;
+        if (res.browserAction) {
+          const newAction = {
+            id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            actionType: "youtubeSearch" as const,
+            target: query,
+            createdAt: new Date().toISOString(),
+          };
+          currentStore = {
+            ...currentStore,
+            browserActions: [...(currentStore.browserActions || []), newAction]
+          };
+        }
 
         return {
           tool: "youtubeSearchMedia",
           success: true,
           voiceResponse: res.voiceResponse,
-          updatedStore,
+          updatedStore: currentStore,
           activeTab: "media",
           browserAction: res.browserAction,
         };
@@ -370,22 +378,26 @@ export const orchestrator = {
       if (!query) {
         query = m;
       }
+      
       const res = YouTubeSearchTool.execute(query, store);
-      const newAction = {
-        id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        actionType: "youtubeSearch" as const,
-        target: query,
-        createdAt: new Date().toISOString(),
-      };
-      const updatedStore = {
-        ...store,
-        browserActions: [...(store.browserActions || []), newAction]
-      };
+      let currentStore = res.updatedStore || store;
+      if (res.browserAction) {
+        const newAction = {
+          id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          actionType: "youtubeSearch" as const,
+          target: query,
+          createdAt: new Date().toISOString(),
+        };
+        currentStore = {
+          ...currentStore,
+          browserActions: [...(currentStore.browserActions || []), newAction]
+        };
+      }
       return {
         tool: "youtubeSearchMedia",
         success: true,
         voiceResponse: res.voiceResponse,
-        updatedStore,
+        updatedStore: currentStore,
         activeTab: "media",
         browserAction: res.browserAction,
       };

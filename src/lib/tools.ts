@@ -112,6 +112,15 @@ export interface PendingAction {
   data: unknown;
 }
 
+export interface YouTubeVideoStoreItem {
+  id: string;
+  title: string;
+  channel: string;
+  duration: string;
+  url: string;
+  thumbnailUrl?: string;
+}
+
 export interface ToolStore {
   tasks: Task[];
   notes: Note[];
@@ -124,6 +133,7 @@ export interface ToolStore {
   pendingAction?: PendingAction | null;
   learningInterests?: string[];
   researchHistory?: string[];
+  youtubeSearchResults?: YouTubeVideoStoreItem[];
 }
 
 export interface ToolResult {

@@ -73,7 +73,39 @@ const MOCK_VIDEOS: Record<string, YouTubeVideo[]> = {
       duration: "6:12",
       url: "https://www.youtube.com/watch?v=O1xKz_QeQoo",
     },
+    {
+      id: "vid-music-3",
+      title: "Ed Sheeran - Shape of You [Official Video]",
+      channel: "Ed Sheeran",
+      duration: "4:24",
+      url: "https://www.youtube.com/watch?v=JGwWNGJdvx8",
+    },
+    {
+      id: "vid-music-4",
+      title: "Alan Walker - Faded",
+      channel: "Alan Walker",
+      duration: "3:32",
+      url: "https://www.youtube.com/watch?v=60ItHLz5WEA",
+    },
   ],
+  highlights: [
+    {
+      id: "vid-highlights",
+      title: "India vs Afghanistan Test Match Highlights",
+      channel: "Sports Central",
+      duration: "15:45",
+      url: "https://www.youtube.com/watch?v=3S1_x5c5nS8",
+    }
+  ],
+  podcast: [
+    {
+      id: "vid-podcast",
+      title: "Lex Fridman Podcast: Active AI and Future of Tech",
+      channel: "Lex Fridman",
+      duration: "2:15:30",
+      url: "https://www.youtube.com/watch?v=5qap5aO4i9A",
+    }
+  ]
 };
 
 export const youtubeService = {
@@ -82,16 +114,39 @@ export const youtubeService = {
    */
   search(query: string) {
     const q = query.toLowerCase();
-    let results: YouTubeVideo[] = [];
+    const allVideos = Object.values(MOCK_VIDEOS).flat();
+    
+    // Filter videos that match the query
+    let results = allVideos.filter(video => {
+      const title = video.title.toLowerCase();
+      const channel = video.channel.toLowerCase();
+      return title.includes(q) || channel.includes(q) || q.includes(title) || q.includes(channel);
+    });
 
-    if (q.includes("believer") || q.includes("bhajan") || q.includes("arijit") || q.includes("song")) {
-      results = MOCK_VIDEOS.music;
-    } else if (q.includes("rag") || q.includes("langgraph")) {
-      results = MOCK_VIDEOS.rag;
-    } else if (q.includes("numpy") || q.includes("math") || q.includes("machine learning") || q.includes("ml")) {
-      results = MOCK_VIDEOS.ml;
-    } else {
-      results = MOCK_VIDEOS.ai;
+    // Fallback if no matching videos found
+    if (results.length === 0) {
+      if (
+        q.includes("believer") ||
+        q.includes("bhajan") ||
+        q.includes("arijit") ||
+        q.includes("song") ||
+        q.includes("shape") ||
+        q.includes("faded") ||
+        q.includes("sheeran") ||
+        q.includes("alan walker")
+      ) {
+        results = MOCK_VIDEOS.music;
+      } else if (q.includes("rag") || q.includes("langgraph")) {
+        results = MOCK_VIDEOS.rag;
+      } else if (q.includes("numpy") || q.includes("math") || q.includes("machine learning") || q.includes("ml")) {
+        results = MOCK_VIDEOS.ml;
+      } else if (q.includes("highlights") || q.includes("india") || q.includes("afghanistan")) {
+        results = MOCK_VIDEOS.highlights;
+      } else if (q.includes("podcast")) {
+        results = MOCK_VIDEOS.podcast;
+      } else {
+        results = MOCK_VIDEOS.ai;
+      }
     }
 
     const voiceResponse = `I found ${results.length} relevant videos on YouTube for "${query}". The top result is "${results[0].title}".`;

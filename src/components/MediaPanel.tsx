@@ -11,7 +11,7 @@ interface MediaPanelProps {
   isBusy: boolean;
 }
 
-export function MediaPanel({ store: _store, onSearch, onPlayVideo, isBusy }: MediaPanelProps) {
+export function MediaPanel({ store, onSearch, onPlayVideo, isBusy }: MediaPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [playingVideo, setPlayingVideo] = useState<YouTubeVideo | null>({
     id: "vid-music-1",
@@ -74,8 +74,62 @@ export function MediaPanel({ store: _store, onSearch, onPlayVideo, isBusy }: Med
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px", flex: 1, minHeight: 0 }}>
-        {/* Left: Recommended educational videos */}
+        {/* Left: Recommended educational videos & Search Results */}
         <div className="panel-card flex flex-col" style={{ padding: "14px", overflowY: "auto" }}>
+          {store.youtubeSearchResults && store.youtubeSearchResults.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginBottom: "16px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "12px" }}>
+              <span className="label-system" style={{ color: "var(--accent)" }}>YouTube Search Results</span>
+              <span style={{ fontSize: "9px", color: "var(--text-muted)", marginBottom: "8px" }}>
+                Select a video to play directly
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {store.youtubeSearchResults.map((vid) => (
+                  <div
+                    key={vid.id}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: "var(--radius-sm)",
+                      background: "var(--bg-2)",
+                      border: "1px solid var(--border-soft)",
+                      display: "flex",
+                      gap: "10px",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ fontSize: "14px" }}>📺</div>
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "1px" }}>
+                      <span
+                        onClick={() => { setPlayingVideo(vid as YouTubeVideo); onPlayVideo(vid as YouTubeVideo); }}
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          cursor: "pointer",
+                          textOverflow: "ellipsis",
+                          overflow: "hidden",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={vid.title}
+                      >
+                        {vid.title}
+                      </span>
+                      <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>
+                        {vid.channel} • {vid.duration}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => { setPlayingVideo(vid as YouTubeVideo); onPlayVideo(vid as YouTubeVideo); }}
+                      className="btn-system"
+                      style={{ padding: "3px 6px", fontSize: "9px" }}
+                    >
+                      Play
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginBottom: "10px" }}>
             <span className="label-system">Goal-Oriented Learning Recommendations</span>
             <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>
