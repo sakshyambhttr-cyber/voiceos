@@ -34,12 +34,15 @@ export class OpenRouterProvider implements LLMProvider {
       },
     });
 
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
       { role: "system", content: request.systemPrompt },
     ];
 
     for (const turn of request.history ?? []) {
-      messages.push({ role: turn.role, content: turn.content });
+      messages.push({
+        role: turn.role === "assistant" ? "assistant" : "user",
+        content: turn.content,
+      });
     }
 
     messages.push({ role: "user", content: request.prompt });

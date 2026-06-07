@@ -27,12 +27,15 @@ export class GroqProvider implements LLMProvider {
       baseURL: "https://api.groq.com/openai/v1",
     });
 
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
       { role: "system", content: request.systemPrompt },
     ];
 
     for (const turn of request.history ?? []) {
-      messages.push({ role: turn.role, content: turn.content });
+      messages.push({
+        role: turn.role === "assistant" ? "assistant" : "user",
+        content: turn.content,
+      });
     }
 
     messages.push({ role: "user", content: request.prompt });
