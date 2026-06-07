@@ -1,0 +1,642 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════
+   VOICE OS — DESIGN TOKEN SYSTEM
+   Principle: Every token is functional. Nothing is decorative.
+═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Surface Scale ─────────────────────────────── */
+  --bg-base: #080808; /* true base — deepest background */
+  --bg-1: #0f0f0f; /* primary panels */
+  --bg-2: #141414; /* elevated surfaces */
+  --bg-3: #1a1a1a; /* hover states, nested cards */
+  --bg-4: #222222; /* active / selected items */
+
+  /* ── Text Scale ────────────────────────────────── */
+  --text-primary: #f0f0f0; /* primary content */
+  --text-secondary: #a0a0a0; /* labels, metadata */
+  --text-muted: #555555; /* disabled, hints */
+  --text-ghost: #333333; /* placeholder text */
+
+  /* ── Border Scale ──────────────────────────────── */
+  --border-subtle: #1e1e1e; /* panel dividers */
+  --border-soft: #282828; /* card borders */
+  --border-mid: #333333; /* interactive borders */
+  --border-strong: #484848; /* focus rings, active */
+
+  /* ── State Colors (functional, not decorative) ─── */
+
+  /* Idle — no accent */
+  --state-idle-bg: #0f0f0f;
+  --state-idle-ring: transparent;
+
+  /* Listening — calm green */
+  --state-listen-bg: #0a150d;
+  --state-listen-ring: hsl(142, 55%, 40%);
+  --state-listen-text: hsl(142, 65%, 55%);
+
+  /* Thinking — amber */
+  --state-think-bg: #15110a;
+  --state-think-ring: hsl(38, 75%, 48%);
+  --state-think-text: hsl(38, 85%, 60%);
+
+  /* Speaking — blue */
+  --state-speak-bg: #0a0e18;
+  --state-speak-ring: hsl(220, 80%, 55%);
+  --state-speak-text: hsl(220, 90%, 70%);
+
+  /* Interrupted — red (sharp, instant) */
+  --state-interrupt-bg: #160a0a;
+  --state-interrupt-ring: hsl(0, 60%, 48%);
+  --state-interrupt-text: hsl(0, 70%, 60%);
+
+  /* Paused — muted purple */
+  --state-pause-bg: #100d17;
+  --state-pause-ring: hsl(270, 28%, 48%);
+  --state-pause-text: hsl(270, 35%, 65%);
+
+  /* ── Typography ────────────────────────────────── */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", ui-monospace, monospace;
+
+  /* ── Motion System ─────────────────────────────── */
+  --dur-micro: 120ms; /* hover, badge state changes */
+  --dur-state: 250ms; /* voice state transitions */
+  --dur-panel: 350ms; /* panel entry / exit */
+  --dur-heavy: 500ms; /* max — major layout transitions */
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-inout: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-sharp: cubic-bezier(0.25, 0, 0, 1);
+
+  /* ── Spacing ───────────────────────────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+
+  /* ── Radius ────────────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BASE RESET & BODY
+═══════════════════════════════════════════════════════════════ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.012em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* ── Mono utility ──────────────────────────────────── */
+.font-mono {
+  font-family: var(--font-mono) !important;
+  font-feature-settings: "liga" 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SCROLLBAR — Minimal, system-consistent
+═══════════════════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-4);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-mid);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   KEYFRAME LIBRARY
+   Rule: Every keyframe maps to a voice state or system event.
+   No decorative / ambient / looping animations permitted.
+═══════════════════════════════════════════════════════════════ */
+
+/* 1. LISTENING — calm pulse on the ring (state-driven, not decorative) */
+@keyframes ring-pulse-listen {
+  0%,
+  100% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.04);
+  }
+}
+
+/* 2. THINKING — dashed ring rotation (deliberate cognitive signal) */
+@keyframes ring-rotate-think {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 3. SPEAKING — waveform bar animation (individual bars, staggered via delay) */
+@keyframes wave-bar {
+  0%,
+  100% {
+    transform: scaleY(0.25);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* 4. PANEL ENTRY — system content entering (one-shot, 350ms) */
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 5. INTERRUPTED — instant flash cut (120ms, one-shot) */
+@keyframes state-interrupt {
+  0% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* 6. STATUS TEXT SWAP — label fade on voice state change */
+@keyframes label-swap {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ANIMATION CLASSES (mapped to voice states only)
+═══════════════════════════════════════════════════════════════ */
+
+/* Applied to the ring element when state = listening */
+.ring--listening {
+  animation: ring-pulse-listen 2s var(--ease-inout) infinite;
+}
+
+/* Applied to the ring element when state = thinking */
+.ring--thinking {
+  animation: ring-rotate-think 3s linear infinite;
+}
+
+/* Applied to waveform bars when active */
+.wave-bar--active {
+  animation: wave-bar var(--wave-dur, 0.6s) var(--ease-inout) infinite;
+}
+
+/* Applied to the orb container when interrupted */
+.state--interrupted {
+  animation: state-interrupt var(--dur-micro) var(--ease-sharp) forwards;
+}
+
+/* Panel entry animation — applies once on mount */
+.panel-enter {
+  animation: panel-enter var(--dur-panel) var(--ease-out) both;
+}
+
+/* Status label re-render animation */
+.label-enter {
+  animation: label-swap var(--dur-state) var(--ease-out) both;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TRANSITION UTILITIES
+   Disciplined, not ad-hoc.
+═══════════════════════════════════════════════════════════════ */
+
+.transition-micro {
+  transition: all var(--dur-micro) var(--ease-out);
+}
+
+.transition-state {
+  transition: all var(--dur-state) var(--ease-inout);
+}
+
+.transition-panel {
+  transition: all var(--dur-panel) var(--ease-out);
+}
+
+/* Voice orb background — smooth state color transitions */
+.orb-bg {
+  transition:
+    background-color var(--dur-state) var(--ease-inout),
+    box-shadow var(--dur-state) var(--ease-inout);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SURFACE & PANEL UTILITIES
+═══════════════════════════════════════════════════════════════ */
+
+.surface-1 {
+  background: var(--bg-1);
+}
+.surface-2 {
+  background: var(--bg-2);
+}
+.surface-3 {
+  background: var(--bg-3);
+}
+
+.panel-base {
+  background: var(--bg-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.panel-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TYPOGRAPHY SYSTEM
+═══════════════════════════════════════════════════════════════ */
+
+/* System label — all caps, widest tracking, muted */
+.label-system {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Status label — the voice state text below the orb */
+.label-state {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Section header */
+.text-section {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: -0.005em;
+}
+
+/* Body content */
+.text-body {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* Mono data — timestamps, IDs, logs */
+.text-mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VOICE STATE BADGE (header indicator)
+═══════════════════════════════════════════════════════════════ */
+
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: border-color var(--dur-state) var(--ease-inout);
+}
+
+.state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  transition: background-color var(--dur-state) var(--ease-inout);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INPUT SYSTEM
+═══════════════════════════════════════════════════════════════ */
+
+.input-base {
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  transition:
+    border-color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out);
+}
+
+.input-base::placeholder {
+  color: var(--text-ghost);
+}
+
+.input-base:focus {
+  border-color: var(--border-strong);
+  background: var(--bg-3);
+}
+
+.input-base:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BUTTON SYSTEM
+═══════════════════════════════════════════════════════════════ */
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-3);
+  color: var(--text-primary);
+  border-color: var(--border-soft);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-system {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--bg-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out);
+}
+
+.btn-system:hover {
+  background: var(--bg-3);
+  color: var(--text-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CUSTOM CHECKBOX (replaces browser default)
+═══════════════════════════════════════════════════════════════ */
+
+.checkbox-system {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border-mid);
+  background: var(--bg-2);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition:
+    border-color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out);
+}
+
+.checkbox-system:checked {
+  background: hsl(220, 80%, 55%);
+  border-color: hsl(220, 80%, 55%);
+}
+
+.checkbox-system:checked::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  width: 5px;
+  height: 8px;
+  border: 1.5px solid white;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg);
+}
+
+.checkbox-system:hover:not(:checked) {
+  border-color: var(--border-strong);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STATUS BADGE (feed items, priority tags)
+═══════════════════════════════════════════════════════════════ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.badge--system {
+  background: var(--bg-3);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-soft);
+}
+.badge--tool {
+  background: hsl(220, 80%, 55%, 0.1);
+  color: hsl(220, 80%, 68%);
+  border: 1px solid hsl(220, 80%, 55%, 0.2);
+}
+.badge--user {
+  background: hsl(260, 60%, 55%, 0.1);
+  color: hsl(260, 60%, 72%);
+  border: 1px solid hsl(260, 60%, 55%, 0.2);
+}
+.badge--agent {
+  background: hsl(142, 55%, 40%, 0.1);
+  color: hsl(142, 55%, 55%);
+  border: 1px solid hsl(142, 55%, 40%, 0.2);
+}
+.badge--council {
+  background: hsl(38, 75%, 48%, 0.1);
+  color: hsl(38, 75%, 62%);
+  border: 1px solid hsl(38, 75%, 48%, 0.2);
+}
+
+.badge--high {
+  background: hsl(0, 60%, 48%, 0.1);
+  color: hsl(0, 65%, 62%);
+  border: 1px solid hsl(0, 60%, 48%, 0.2);
+}
+.badge--medium {
+  background: hsl(38, 75%, 48%, 0.1);
+  color: hsl(38, 80%, 60%);
+  border: 1px solid hsl(38, 75%, 48%, 0.2);
+}
+.badge--low {
+  background: hsl(220, 80%, 55%, 0.1);
+  color: hsl(220, 80%, 68%);
+  border: 1px solid hsl(220, 80%, 55%, 0.2);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PROGRESS BAR SYSTEM
+═══════════════════════════════════════════════════════════════ */
+
+.progress-track {
+  width: 100%;
+  height: 2px;
+  background: var(--bg-4);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: hsl(220, 80%, 55%);
+  border-radius: var(--radius-full);
+  transition: width var(--dur-panel) var(--ease-out);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DIVIDERS
+═══════════════════════════════════════════════════════════════ */
+
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   WAVEFORM BARS (inline style sets --wave-delay per bar)
+═══════════════════════════════════════════════════════════════ */
+
+.waveform-bar {
+  width: 2px;
+  border-radius: var(--radius-full);
+  transform-origin: center bottom;
+  transform: scaleY(0.2);
+  background: var(--wave-color, var(--border-mid));
+  transition: background-color var(--dur-state) var(--ease-inout);
+}
+
+.waveform-bar.wave-bar--active {
+  animation-delay: var(--wave-delay, 0s);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FOCUS VISIBLE (accessibility — keyboard nav only)
+═══════════════════════════════════════════════════════════════ */
+
+:focus-visible {
+  outline: 2px solid hsl(220, 80%, 55%);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE UTILITIES
+═══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1024px) {
+  /* Tablet: sidebar collapses, voice core stays centered */
+  .sidebar-context,
+  .sidebar-activity {
+    display: none;
+  }
+
+  .voice-layout-center {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Mobile: full screen voice core */
+  body {
+    font-size: 13px;
+  }
+}
