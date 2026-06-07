@@ -47,6 +47,7 @@ export class GroqProvider implements LLMProvider {
         messages,
         max_tokens: request.maxTokens ?? 200,
         temperature: request.temperature ?? 0.4,
+        user: request.userId ?? "voice-agent-os-default-user",
       });
     } catch (error) {
       const originalMessage = error instanceof Error ? error.message : String(error);

@@ -21,6 +21,8 @@ export interface LLMRequest {
   temperature?: number;
   /** Hard cap on response tokens. Default 200 */
   maxTokens?: number;
+  /** Unique end-user identifier to track and prevent abuse */
+  userId?: string;
 }
 
 /** Successful LLM response */
