@@ -269,6 +269,7 @@ Analyze and return the JSON payload.`;
 export function generateDailyBriefing(
   goals: Goal[],
   store: ToolStore,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _memory: MemoryTurn[]
 ): string {
   const insights = generateHeuristicInsights(goals, store);

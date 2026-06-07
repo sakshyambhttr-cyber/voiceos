@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, useCallback, KeyboardEvent } from "react";
 
 // 2. Components
-import { ModeSelector, MODES } from "@/components/ModeSelector";
+import { ModeSelector } from "@/components/ModeSelector";
 import { GoalPanel } from "@/components/GoalPanel";
 import { TaskPanel } from "@/components/TaskPanel";
 import { AgentActivityIndicator } from "@/components/AgentActivityIndicator";
@@ -76,9 +76,6 @@ function genId() {
   return Math.random().toString(36).slice(2, 9);
 }
 
-function getModeConfig(id: AgentMode) {
-  return MODES.find((m) => m.id === id) ?? MODES[0];
-}
 function speechErrorMessage(code: string): { text: string; showTextFallback: boolean } {
   switch (code) {
     case "network":
@@ -242,7 +239,7 @@ export default function VoiceAgentOS() {
         setAppState("idle");
         try {
           interruptionRecognitionRef.current?.stop();
-        } catch (e) {}
+        } catch {}
         return true;
       }
 
@@ -254,7 +251,7 @@ export default function VoiceAgentOS() {
         setAppState("paused");
         try {
           interruptionRecognitionRef.current?.stop();
-        } catch (e) {}
+        } catch {}
         return true;
       }
 
@@ -279,7 +276,7 @@ export default function VoiceAgentOS() {
         setAppState("idle");
         try {
           interruptionRecognitionRef.current?.stop();
-        } catch (e) {}
+        } catch {}
 
         const assistantMsgs = messages.filter((m) => m.role === "assistant");
         if (assistantMsgs.length > 0) {
@@ -300,7 +297,7 @@ export default function VoiceAgentOS() {
         setAppState("thinking");
         try {
           interruptionRecognitionRef.current?.stop();
-        } catch (e) {}
+        } catch {}
 
         const userMsgs = messages.filter((m) => m.role === "user");
         const lastUserPrompt = userMsgs.length > 0 ? userMsgs[userMsgs.length - 1].content : "";
@@ -344,7 +341,7 @@ export default function VoiceAgentOS() {
       setAppState("interrupted");
       try {
         interruptionRecognitionRef.current?.stop();
-      } catch (e) {}
+      } catch {}
 
       setTimeout(() => {
         sendToAgentRef.current?.(text);
@@ -359,10 +356,10 @@ export default function VoiceAgentOS() {
 
     try {
       recognitionRef.current?.stop();
-    } catch (e) {}
+    } catch {}
     try {
       interruptionRecognitionRef.current?.stop();
-    } catch (e) {}
+    } catch {}
 
     const SRConstructor = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SRConstructor();
@@ -447,20 +444,20 @@ export default function VoiceAgentOS() {
             URL.revokeObjectURL(audioUrl);
             try {
               interruptionRecognitionRef.current?.stop();
-            } catch (e) {}
+            } catch {}
             resolve();
           };
           audio.onerror = () => {
             URL.revokeObjectURL(audioUrl);
             try {
               interruptionRecognitionRef.current?.stop();
-            } catch (e) {}
+            } catch {}
             resolve();
           };
           audio.play().catch(() => {
             try {
               interruptionRecognitionRef.current?.stop();
-            } catch (e) {}
+            } catch {}
             resolve();
           });
         });
@@ -468,7 +465,7 @@ export default function VoiceAgentOS() {
         console.error("[voice]", err);
         try {
           interruptionRecognitionRef.current?.stop();
-        } catch (e) {}
+        } catch {}
       } finally {
         setAppState((curr) => (curr === "speaking" ? "idle" : curr));
       }
