@@ -1728,7 +1728,10 @@ export default function VoiceAgentOS() {
               <MediaPanel
                 store={store}
                 onSearch={(query) => sendToAgent(`Search YouTube for ${query}`)}
-                onPlayVideo={(vid) => sendToAgent(`Play ${vid.title}`)}
+                onPlayVideo={(vid) => {
+                  // Directly open the video URL — no re-routing through confidence scoring
+                  executeBrowserAction({ actionType: "youtubePlay", target: vid.url });
+                }}
                 isBusy={isBusy}
               />
             )}

@@ -156,10 +156,19 @@ export const youtubeService = {
     const allVideos = Object.values(MOCK_VIDEOS).flat();
     
     // Filter videos that match the query
+    // Only use q.includes(title) for longer titles (4+ words) to avoid short-title false positives
     let results = allVideos.filter(video => {
       const title = video.title.toLowerCase();
       const channel = video.channel.toLowerCase();
-      return title.includes(q) || channel.includes(q) || q.includes(title) || q.includes(channel);
+      const titleWords = title.split(/\s+/).filter(w => w.length > 2);
+      const channelWords = channel.split(/\s+/).filter(w => w.length > 2);
+      const titleMatch = title.includes(q) || (titleWords.length >= 4 && q.includes(title));
+      const channelMatch = channel.includes(q) || channelWords.some(w => q.includes(w));
+      // Word-based partial match: check if 2+ meaningful words from query appear in title
+      const queryWords = q.split(/\s+/).filter(w => w.length > 2);
+      const wordOverlap = queryWords.filter(w => title.includes(w) || channel.includes(w)).length;
+      const hasWordMatch = queryWords.length > 0 && wordOverlap >= Math.min(2, queryWords.length);
+      return titleMatch || channelMatch || hasWordMatch;
     });
 
     // Fallback if no matching videos found

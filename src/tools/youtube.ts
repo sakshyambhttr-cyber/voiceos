@@ -112,16 +112,15 @@ export function cleanAndValidateYouTubeQuery(message: string): string {
   // 4. Remove suffixes
   clean = clean.replace(/\s+on\s+(youtube|yt)$/gi, "");
 
-  // 5. Validation: Strip forbidden command phrases globally if they still exist
-  const forbidden = [
-    /\b(open\s+youtube)\b/gi,
-    /\b(search\s+youtube)\b/gi,
-    /\b(search\s+for)\b/gi,
-    /\b(play)\b/gi,
-    /\b(watch)\b/gi,
+  // 5. Validation: Strip forbidden command phrases globally ONLY if they appear at the start
+  // Do NOT strip words like "play" or "watch" from mid-query — they may be content words
+  const globalForbidden = [
+    /^(open\s+youtube)\b/gi,
+    /^(search\s+youtube)\b/gi,
+    /^(search\s+for)\b/gi,
   ];
 
-  for (const pattern of forbidden) {
+  for (const pattern of globalForbidden) {
     clean = clean.replace(pattern, "");
   }
 
@@ -142,63 +141,54 @@ export function cleanAndValidateYouTubeQuery(message: string): string {
   return finalQuery;
 }
 
-// Confidence scorer that weights title similarity, channel matches, and target boosts
+// Confidence scorer: uses semantic word overlap, channel/artist match, and exact phrase match
 function calculateConfidence(query: string, video: YouTubeVideo): number {
   const q = query.toLowerCase().trim();
   const title = video.title.toLowerCase();
   const channel = video.channel.toLowerCase();
 
+  // Strip common filler words from query for cleaner matching
+  const cleanQ = q
+    .replace(/\b(play|watch|listen\s+to|listen|start|open|on|youtube|yt|video|videos|by|the|a|an)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
   let score = 0;
 
-  // 1. Channel / Artist match boost (0.3)
-  const artists = ["imagine dragons", "ed sheeran", "alan walker", "spiritual india", "simplilearn", "3blue1brown", "ibm", "freecodecamp", "fireship", "lex fridman"];
-  for (const artist of artists) {
-    if (q.includes(artist) && channel.includes(artist)) {
+  // 1. Channel / Artist match (0.3)
+  // Split channel into meaningful words and check if query contains any of them
+  const channelWords = channel.split(/[\s\-_]+/).filter(w => w.length > 3);
+  for (const cWord of channelWords) {
+    if (cleanQ.includes(cWord)) {
       score += 0.3;
       break;
     }
   }
 
-  // 2. Specific exact matches to hit high confidence (>90%)
-  if (q.includes("believer") && video.id === "vid-music-1") {
-    score += 0.6;
-  }
-  if (q.includes("bhajan") && video.id === "vid-music-2") {
-    score += 0.6;
-  }
-  if (q.includes("shape of you") && video.id === "vid-music-3") {
-    score += 0.7;
-  }
-  if (q.includes("faded") && video.id === "vid-music-4") {
-    score += 0.7;
-  }
-  if ((q.includes("india") || q.includes("afghanistan") || q.includes("highlights")) && video.id === "vid-highlights") {
-    score += 0.7;
-  }
-  if ((q.includes("podcast") || q.includes("ai podcast")) && video.id === "vid-podcast") {
-    score += 0.7;
+  // 2. Exact phrase match in title (0.35)
+  // Check if the cleaned query (or a significant part) appears in the title
+  const cleanTitle = title.replace(/[^a-z0-9\s]/g, "");
+  if (cleanQ && cleanTitle.includes(cleanQ)) {
+    score += 0.35;
+  } else if (cleanQ.length > 4) {
+    // Check reverse: if title phrase appears in query (useful for short titles)
+    const cleanTitleWords = cleanTitle.split(/\s+/).filter(w => w.length > 3);
+    const matchingTitleWords = cleanTitleWords.filter(w => cleanQ.includes(w));
+    if (cleanTitleWords.length > 0 && matchingTitleWords.length / cleanTitleWords.length >= 0.7) {
+      score += 0.25;
+    }
   }
 
-  // 3. Word overlap ratio (0.4)
-  const cleanWords = q.replace(/\b(play|watch|listen\s+to|listen|start|on|youtube|yt|video|videos|by)\b/g, "")
-                      .split(/\s+/)
-                      .filter(w => w.length > 2);
-  
-  if (cleanWords.length > 0) {
+  // 3. Word overlap ratio (0.35)
+  const queryWords = cleanQ.split(/\s+/).filter(w => w.length > 2);
+  if (queryWords.length > 0) {
     let matches = 0;
-    for (const word of cleanWords) {
+    for (const word of queryWords) {
       if (title.includes(word) || channel.includes(word)) {
         matches++;
       }
     }
-    score += (matches / cleanWords.length) * 0.4;
-  }
-
-  // 4. Substring Match boost (0.2)
-  const cleanTitle = title.replace(/[^a-z0-9\s]/g, "");
-  const cleanQ = q.replace(/\b(play|watch|listen\s+to|listen|start|on|youtube|yt|video|videos|by)\b/g, "").trim();
-  if (cleanQ && (cleanTitle.includes(cleanQ) || cleanQ.includes(cleanTitle))) {
-    score += 0.2;
+    score += (matches / queryWords.length) * 0.35;
   }
 
   return Math.min(score, 1.0);
@@ -265,8 +255,8 @@ export const YouTubePlayTool = {
     const topConfidence = topCandidate ? topCandidate.relevance : 0;
 
     // 3. Branch based on confidence thresholds
-    if (topConfidence >= 0.9) {
-      // High Confidence (>90%) -> Auto-play
+    if (topConfidence > 0.8) {
+      // High Confidence (>0.8) -> Auto-play
       const videoUrl = topCandidate.video.url;
       const videoTitle = topCandidate.video.title;
       
@@ -289,8 +279,8 @@ export const YouTubePlayTool = {
         },
         updatedStore,
       };
-    } else if (topConfidence >= 0.6) {
-      // Medium Confidence (60% - 90%) -> Show top 3 candidate videos
+    } else if (topConfidence >= 0.5) {
+      // Medium Confidence (0.5 to 0.8) -> Show top 3 candidate videos
       const candidates = scoredCandidates.slice(0, 3).map(c => c.video);
       const updatedStore = {
         ...store,
@@ -306,18 +296,22 @@ export const YouTubePlayTool = {
         updatedStore,
       };
     } else {
-      // Low Confidence (<60%) -> Do not open, ask to clarify
+      // Low Confidence (<0.5) -> Open YouTube search page (graceful fallback)
       const updatedStore = {
         ...store,
-        youtubeSearchResults: undefined, // Clear results
+        youtubeSearchResults: videos, // Show all search results in UI
       };
 
       return {
         tool: "youtube.play",
         query: cleanQuery,
         success: true,
-        voiceResponse: "I'm not sure which video you want to play. Could you please specify the title or search query more clearly?",
+        voiceResponse: "Here are the most relevant YouTube results.",
         activeTab: "media",
+        browserAction: {
+          actionType: "youtubeSearch",
+          target: cleanQuery, // Pass clean query directly to client browser search
+        },
         updatedStore,
       };
     }
