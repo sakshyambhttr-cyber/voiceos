@@ -2,7 +2,8 @@ import { youtubeService, type YouTubeVideo } from "@/services/youtube";
 import { type ToolStore } from "@/lib/tools";
 
 export interface YouTubeToolResult {
-  tool: "youtubeSearchMedia" | "youtubePlayMedia";
+  tool: "youtube.search" | "youtube.play";
+  query: string;
   success: boolean;
   voiceResponse: string;
   videos?: YouTubeVideo[];
@@ -14,6 +15,96 @@ export interface YouTubeToolResult {
     target: string;
   };
   updatedStore?: ToolStore;
+}
+
+// Cleans command words and extracts the core search/playback entity
+export function cleanAndValidateYouTubeQuery(message: string): string {
+  let clean = message.toLowerCase().trim();
+
+  // 1. Remove composite prefix patterns (longest first)
+  const prefixPatterns = [
+    /^(open\s+youtube\s+and\s+search\s+for)/gi,
+    /^(open\s+youtube\s+and\s+search)/gi,
+    /^(open\s+youtube\s+and\s+play)/gi,
+    /^(open\s+youtube\s+and\s+watch)/gi,
+    /^(search\s+youtube\s+for)/gi,
+    /^(search\s+youtube)/gi,
+    /^(search\s+for)/gi,
+    /^(youtube\s+search\s+for)/gi,
+    /^(youtube\s+search)/gi,
+    /^(find\s+videos\s+explaining)/gi,
+    /^(find\s+courses\s+about)/gi,
+    /^(find\s+videos\s+about)/gi,
+    /^(show\s+me\s+videos\s+about)/gi,
+    /^(show\s+me\s+courses\s+about)/gi,
+    /^(play\s+on\s+youtube)/gi,
+    /^(play\s+youtube)/gi,
+    /^(play\s+yt)/gi,
+    /^(watch\s+on\s+youtube)/gi,
+    /^(watch\s+youtube)/gi,
+    /^(listen\s+to\s+on\s+youtube)/gi,
+    /^(listen\s+to)/gi,
+    /^(start\s+on\s+youtube)/gi,
+  ];
+
+  for (const pattern of prefixPatterns) {
+    clean = clean.replace(pattern, "");
+  }
+
+  // 2. Remove single prefix patterns if still at start
+  const singlePrefixes = [
+    /^(open\s+youtube)/gi,
+    /^(search)/gi,
+    /^(find)/gi,
+    /^(play)/gi,
+    /^(watch)/gi,
+    /^(open)/gi,
+    /^(listen)/gi,
+    /^(start)/gi,
+    /^(show\s+me)/gi,
+  ];
+  for (const pattern of singlePrefixes) {
+    clean = clean.replace(pattern, "");
+  }
+
+  // 3. Remove connectives
+  clean = clean.replace(/^(and\s+search\s+for)/gi, "");
+  clean = clean.replace(/^(and\s+search)/gi, "");
+  clean = clean.replace(/^(and\s+play)/gi, "");
+  clean = clean.replace(/^(and\s+watch)/gi, "");
+  clean = clean.replace(/^(and)/gi, "");
+
+  // 4. Remove suffixes
+  clean = clean.replace(/\s+on\s+(youtube|yt)$/gi, "");
+
+  // 5. Validation: Strip forbidden command phrases globally if they still exist
+  const forbidden = [
+    /\b(open\s+youtube)\b/gi,
+    /\b(search\s+youtube)\b/gi,
+    /\b(search\s+for)\b/gi,
+    /\b(play)\b/gi,
+    /\b(watch)\b/gi,
+  ];
+
+  for (const pattern of forbidden) {
+    clean = clean.replace(pattern, "");
+  }
+
+  let finalQuery = clean.replace(/\s+/g, " ").trim();
+  
+  // Format words nicely
+  if (finalQuery.length > 0) {
+    finalQuery = finalQuery
+      .split(" ")
+      .map(word => {
+        if (word === "ai") return "AI";
+        if (word === "vs") return "vs";
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      })
+      .join(" ");
+  }
+
+  return finalQuery;
 }
 
 // Confidence scorer that weights title similarity, channel matches, and target boosts
@@ -79,15 +170,17 @@ function calculateConfidence(query: string, video: YouTubeVideo): number {
 }
 
 export const YouTubeSearchTool = {
-  name: "youtubeSearchMedia" as const,
+  name: "youtube.search" as const,
   execute(query: string, store: ToolStore): YouTubeToolResult {
-    const res = youtubeService.search(query);
+    const cleanQuery = cleanAndValidateYouTubeQuery(query);
+    const res = youtubeService.search(cleanQuery);
     const updatedStore = {
       ...store,
       youtubeSearchResults: res.videos,
     };
     return {
-      tool: "youtubeSearchMedia",
+      tool: "youtube.search",
+      query: cleanQuery,
       success: true,
       voiceResponse: "Here are the most relevant YouTube results.",
       videos: res.videos,
@@ -102,16 +195,17 @@ export const YouTubeSearchTool = {
 };
 
 export const YouTubePlayTool = {
-  name: "youtubePlayMedia" as const,
+  name: "youtube.play" as const,
   execute(query: string, store: ToolStore): YouTubeToolResult {
+    const cleanQuery = cleanAndValidateYouTubeQuery(query);
     // 1. Search YouTube programmatically using the search service
-    const searchRes = youtubeService.search(query);
+    const searchRes = youtubeService.search(cleanQuery);
     const videos = searchRes.videos || [];
 
     // 2. Score and rank candidate videos
     const scoredCandidates = videos.map(video => ({
       video,
-      confidence: calculateConfidence(query, video)
+      confidence: calculateConfidence(cleanQuery, video)
     }));
 
     scoredCandidates.sort((a, b) => b.confidence - a.confidence);
@@ -131,7 +225,8 @@ export const YouTubePlayTool = {
       };
 
       return {
-        tool: "youtubePlayMedia",
+        tool: "youtube.play",
+        query: cleanQuery,
         success: true,
         voiceResponse: "Playing the most relevant result on YouTube.",
         videoUrl,
@@ -152,7 +247,8 @@ export const YouTubePlayTool = {
       };
 
       return {
-        tool: "youtubePlayMedia",
+        tool: "youtube.play",
+        query: cleanQuery,
         success: true,
         voiceResponse: "I found several relevant videos. Which one would you like?",
         activeTab: "media",
@@ -166,7 +262,8 @@ export const YouTubePlayTool = {
       };
 
       return {
-        tool: "youtubePlayMedia",
+        tool: "youtube.play",
+        query: cleanQuery,
         success: true,
         voiceResponse: "I'm not sure which video you want to play. Could you please specify the title or search query more clearly?",
         activeTab: "media",

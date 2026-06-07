@@ -20,6 +20,8 @@ export type ToolName =
   | "scheduleEvent"
   | "conflictCheck"
   | "morningBriefing"
+  | "youtube.search"
+  | "youtube.play"
   | "youtubeSearchMedia"
   | "youtubePlayMedia"
   | "youtubeEducational"

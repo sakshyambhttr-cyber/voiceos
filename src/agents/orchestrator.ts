@@ -13,6 +13,7 @@ export interface OrchestrationResult {
   activeTab?: "console" | "gmail" | "calendar" | "research" | "media";
   browserAction?: unknown;
   pendingAction?: unknown;
+  query?: string;
 }
 
 // Parses meeting times relative to mock session time: Sunday, June 7, 2026, 11:03 AM
@@ -264,23 +265,14 @@ export const orchestrator = {
       // 3a. Play Intent
       const isPlay = /\b(play|watch|listen\s+to|listen|start)\b/.test(m);
       if (isPlay) {
-        let query = m;
-        query = query
-          .replace(/^(play\s+on\s+youtube|play\s+youtube|play\s+yt|play|watch\s+on\s+youtube|watch\s+youtube|watch|listen\s+to\s+on\s+youtube|listen\s+to|listen|start\s+on\s+youtube|start)\s+/i, "")
-          .replace(/\s+on\s+(youtube|yt)$/i, "")
-          .trim();
-        if (!query) {
-          query = m;
-        }
-
-        const res = YouTubePlayTool.execute(query, store);
+        const res = YouTubePlayTool.execute(message, store);
         
         let currentStore = res.updatedStore || store;
         if (res.browserAction) {
           const newAction = {
             id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
             actionType: "youtubePlay" as const,
-            target: res.videoUrl || query,
+            target: res.videoUrl || res.query,
             createdAt: new Date().toISOString(),
           };
           currentStore = {
@@ -290,7 +282,8 @@ export const orchestrator = {
         }
 
         return {
-          tool: "youtubePlayMedia",
+          tool: "youtube.play",
+          query: res.query,
           success: true,
           voiceResponse: res.voiceResponse,
           updatedStore: currentStore,
@@ -302,23 +295,14 @@ export const orchestrator = {
       // 3b. Search Intent
       const isSearch = /\b(search|find|show\s+me)\b/.test(m);
       if (isSearch) {
-        let query = m;
-        query = query
-          .replace(/^(search\s+youtube\s+for|search\s+youtube|search\s+yt\s+for|search\s+for|search|find\s+videos\s+about|find\s+courses\s+about|find|show\s+me\s+videos\s+about|show\s+me\s+courses\s+about|show\s+me)\s+/i, "")
-          .replace(/\s+on\s+(youtube|yt)$/i, "")
-          .trim();
-        if (!query) {
-          query = m;
-        }
-
-        const res = YouTubeSearchTool.execute(query, store);
+        const res = YouTubeSearchTool.execute(message, store);
         
         let currentStore = res.updatedStore || store;
         if (res.browserAction) {
           const newAction = {
             id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
             actionType: "youtubeSearch" as const,
-            target: query,
+            target: res.query,
             createdAt: new Date().toISOString(),
           };
           currentStore = {
@@ -328,7 +312,8 @@ export const orchestrator = {
         }
 
         return {
-          tool: "youtubeSearchMedia",
+          tool: "youtube.search",
+          query: res.query,
           success: true,
           voiceResponse: res.voiceResponse,
           updatedStore: currentStore,
@@ -370,22 +355,13 @@ export const orchestrator = {
       }
 
       // 3e. General YouTube Fallback
-      let query = m;
-      query = query
-        .replace(/^(search\s+youtube\s+for|search\s+youtube|search\s+yt\s+for|search\s+for|search|find\s+videos\s+about|find\s+courses\s+about|find|show\s+me\s+videos\s+about|show\s+me\s+courses\s+about|show\s+me)\s+/i, "")
-        .replace(/\s+on\s+(youtube|yt)$/i, "")
-        .trim();
-      if (!query) {
-        query = m;
-      }
-      
-      const res = YouTubeSearchTool.execute(query, store);
+      const res = YouTubeSearchTool.execute(message, store);
       let currentStore = res.updatedStore || store;
       if (res.browserAction) {
         const newAction = {
           id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
           actionType: "youtubeSearch" as const,
-          target: query,
+          target: res.query,
           createdAt: new Date().toISOString(),
         };
         currentStore = {
@@ -394,7 +370,8 @@ export const orchestrator = {
         };
       }
       return {
-        tool: "youtubeSearchMedia",
+        tool: "youtube.search",
+        query: res.query,
         success: true,
         voiceResponse: res.voiceResponse,
         updatedStore: currentStore,

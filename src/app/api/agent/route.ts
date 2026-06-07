@@ -102,6 +102,7 @@ export async function POST(req: NextRequest) {
         updatedStore: orchestrationResult.updatedStore,
         activeTab: orchestrationResult.activeTab,
         browserAction: orchestrationResult.browserAction,
+        query: orchestrationResult.query,
         mode: activeMode,
       });
     }
