@@ -3,6 +3,7 @@ import { gmailService } from "@/services/gmail";
 import { calendarService } from "@/services/calendar";
 import { youtubeService } from "@/services/youtube";
 import { researchService } from "@/services/research";
+import { YouTubeSearchTool, YouTubePlayTool } from "@/tools/youtube";
 
 export interface OrchestrationResult {
   tool: ToolName;
@@ -258,26 +259,89 @@ export const orchestrator = {
     }
 
     // ─── 3. Media & Knowledge Agent Classification ───
-    const isYoutube = /\b(youtube|video|videos|play|tutorial|tutorials|course|courses|song|songs|bhajan|music)\b/.test(m);
+    const isYoutube = /\b(youtube|yt|video|videos|play|watch|listen|start|search|find|show\s+me|tutorial|tutorials|course|courses|song|songs|bhajan|music|podcast|podcasts|highlights)\b/.test(m);
     if (isYoutube) {
-      // 3a. Play Content
-      if (m.startsWith("play ") || m.includes("play ")) {
-        const query = m.replace(/^(play\s+on\s+youtube|play\s+youtube|play\s+yt|play)\s+/i, "").trim();
-        const res = youtubeService.play(query);
+      // 3a. Play Intent
+      const isPlay = /\b(play|watch|listen\s+to|listen|start)\b/.test(m);
+      if (isPlay) {
+        let query = m;
+        query = query
+          .replace(/^(play\s+on\s+youtube|play\s+youtube|play\s+yt|play|watch\s+on\s+youtube|watch\s+youtube|watch|listen\s+to\s+on\s+youtube|listen\s+to|listen|start\s+on\s+youtube|start)\s+/i, "")
+          .replace(/\s+on\s+(youtube|yt)$/i, "")
+          .trim();
+        if (!query) {
+          query = m;
+        }
+
+        const res = YouTubePlayTool.execute(query, store);
+        const newAction = {
+          id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          actionType: "youtubePlay" as const,
+          target: res.videoUrl || query,
+          createdAt: new Date().toISOString(),
+        };
+        const updatedStore = {
+          ...store,
+          browserActions: [...(store.browserActions || []), newAction]
+        };
+
         return {
           tool: "youtubePlayMedia",
           success: true,
           voiceResponse: res.voiceResponse,
-          updatedStore: store,
+          updatedStore,
           activeTab: "media",
-          browserAction: {
-            actionType: "youtubePlay",
-            target: res.videoUrl,
-          },
+          browserAction: res.browserAction,
         };
       }
 
-      // 3b. Educational Discovery
+      // 3b. Search Intent
+      const isSearch = /\b(search|find|show\s+me)\b/.test(m);
+      if (isSearch) {
+        let query = m;
+        query = query
+          .replace(/^(search\s+youtube\s+for|search\s+youtube|search\s+yt\s+for|search\s+for|search|find\s+videos\s+about|find\s+courses\s+about|find|show\s+me\s+videos\s+about|show\s+me\s+courses\s+about|show\s+me)\s+/i, "")
+          .replace(/\s+on\s+(youtube|yt)$/i, "")
+          .trim();
+        if (!query) {
+          query = m;
+        }
+
+        const res = YouTubeSearchTool.execute(query, store);
+        const newAction = {
+          id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          actionType: "youtubeSearch" as const,
+          target: query,
+          createdAt: new Date().toISOString(),
+        };
+        const updatedStore = {
+          ...store,
+          browserActions: [...(store.browserActions || []), newAction]
+        };
+
+        return {
+          tool: "youtubeSearchMedia",
+          success: true,
+          voiceResponse: res.voiceResponse,
+          updatedStore,
+          activeTab: "media",
+          browserAction: res.browserAction,
+        };
+      }
+
+      // 3c. YouTube Recommendations
+      if (/\b(recommendation|recommendations|what should i watch|suggest videos)\b/.test(m)) {
+        const res = youtubeService.getLearningRecommendations(store);
+        return {
+          tool: "youtubeRecommendations",
+          success: true,
+          voiceResponse: res.voiceResponse,
+          updatedStore: store,
+          activeTab: "media",
+        };
+      }
+
+      // 3d. Educational Discovery
       if (/\b(educational|explain|explaining|course|courses|learn|study|discover)\b/.test(m)) {
         const query = m.replace(/^(find\s+videos\s+explaining|find\s+courses\s+about|find|explain|discover)\s+/i, "").trim();
         const res = youtubeService.search(query);
@@ -297,30 +361,34 @@ export const orchestrator = {
         };
       }
 
-      // 3c. YouTube Recommendations
-      if (/\b(recommendation|recommendations|what should i watch|suggest videos)\b/.test(m)) {
-        const res = youtubeService.getLearningRecommendations(store);
-        return {
-          tool: "youtubeRecommendations",
-          success: true,
-          voiceResponse: res.voiceResponse,
-          updatedStore: store,
-          activeTab: "media",
-        };
+      // 3e. General YouTube Fallback
+      let query = m;
+      query = query
+        .replace(/^(search\s+youtube\s+for|search\s+youtube|search\s+yt\s+for|search\s+for|search|find\s+videos\s+about|find\s+courses\s+about|find|show\s+me\s+videos\s+about|show\s+me\s+courses\s+about|show\s+me)\s+/i, "")
+        .replace(/\s+on\s+(youtube|yt)$/i, "")
+        .trim();
+      if (!query) {
+        query = m;
       }
-
-      // 3d. General YouTube Search
-      if (/\b(search|find|lookup|look up)\b/.test(m)) {
-        const query = m.replace(/^(search\s+youtube\s+for|youtube\s+search|search)\s+/i, "").trim();
-        const res = youtubeService.search(query);
-        return {
-          tool: "youtubeSearchMedia",
-          success: true,
-          voiceResponse: res.voiceResponse,
-          updatedStore: store,
-          activeTab: "media",
-        };
-      }
+      const res = YouTubeSearchTool.execute(query, store);
+      const newAction = {
+        id: "browser-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        actionType: "youtubeSearch" as const,
+        target: query,
+        createdAt: new Date().toISOString(),
+      };
+      const updatedStore = {
+        ...store,
+        browserActions: [...(store.browserActions || []), newAction]
+      };
+      return {
+        tool: "youtubeSearchMedia",
+        success: true,
+        voiceResponse: res.voiceResponse,
+        updatedStore,
+        activeTab: "media",
+        browserAction: res.browserAction,
+      };
     }
 
     // ─── 4. Research Agent Classification ───

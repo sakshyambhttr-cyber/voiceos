@@ -53,9 +53,12 @@ export const youtube = {
   play(query: string): void {
     if (typeof window === "undefined") return;
     const cleanQuery = sanitizeQuery(query);
-    // Standard playback route is to search and open results page, let's keep it simple and safe.
-    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (/^https?:\/\//i.test(cleanQuery)) {
+      browser.open(cleanQuery);
+    } else {
+      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   },
 };
 
