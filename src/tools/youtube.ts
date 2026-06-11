@@ -58,6 +58,34 @@ export function cleanAndValidateYouTubeQuery(message: string): string {
 
   // 1. Remove composite prefix patterns (longest first)
   const prefixPatterns = [
+    /^(change\s+the\s+video\s+and\s+move\s+to\s+search\s+for)/gi,
+    /^(change\s+the\s+video\s+and\s+move\s+to\s+search)/gi,
+    /^(change\s+the\s+play\s+and\s+move\s+to\s+search\s+for)/gi,
+    /^(change\s+the\s+play\s+and\s+move\s+to\s+search)/gi,
+    /^(change\s+the\s+song\s+and\s+move\s+to\s+search\s+for)/gi,
+    /^(change\s+the\s+song\s+and\s+move\s+to\s+search)/gi,
+    /^(change\s+the\s+query\s+and\s+move\s+to\s+search\s+for)/gi,
+    /^(change\s+the\s+query\s+and\s+move\s+to\s+search)/gi,
+    /^(change\s+and\s+move\s+to\s+search\s+for)/gi,
+    /^(change\s+and\s+move\s+to\s+search)/gi,
+    /^(change\s+to\s+search\s+for)/gi,
+    /^(change\s+to\s+search)/gi,
+    /^(move\s+to\s+search\s+for)/gi,
+    /^(move\s+to\s+search)/gi,
+    /^(change\s+the\s+video\s+and\s+search\s+for)/gi,
+    /^(change\s+the\s+video\s+and\s+search)/gi,
+    /^(change\s+the\s+play\s+and\s+search\s+for)/gi,
+    /^(change\s+the\s+play\s+and\s+search)/gi,
+    /^(change\s+the\s+song\s+and\s+search\s+for)/gi,
+    /^(change\s+the\s+song\s+and\s+search)/gi,
+    /^(change\s+and\s+search\s+for)/gi,
+    /^(change\s+and\s+search)/gi,
+    /^(change\s+the\s+search\s+to)/gi,
+    /^(change\s+the\s+video\s+to)/gi,
+    /^(change\s+the\s+song\s+to)/gi,
+    /^(change\s+the\s+play\s+to)/gi,
+    /^(change\s+query\s+to)/gi,
+    /^(change\s+search\s+to)/gi,
     /^(open\s+youtube\s+and\s+search\s+for)/gi,
     /^(open\s+youtube\s+and\s+search)/gi,
     /^(open\s+youtube\s+and\s+play)/gi,
@@ -289,8 +317,15 @@ export const YouTubePlayTool = {
       };
     });
 
-    // Sort by composite score descending
-    scoredCandidates.sort((a, b) => b.compositeScore - a.compositeScore);
+    // Sort primarily by views descending, breaking ties with composite score
+    scoredCandidates.sort((a, b) => {
+      const viewsA = a.video.views || 0;
+      const viewsB = b.video.views || 0;
+      if (viewsB !== viewsA) {
+        return viewsB - viewsA;
+      }
+      return b.compositeScore - a.compositeScore;
+    });
 
     const topCandidate = scoredCandidates[0];
     const topConfidence = topCandidate ? topCandidate.relevance : 0;
@@ -338,9 +373,10 @@ export const YouTubePlayTool = {
       };
     } else {
       // Low Confidence (<0.5) -> Open YouTube search page (graceful fallback)
+      const candidates = scoredCandidates.map(c => c.video);
       const updatedStore = {
         ...store,
-        youtubeSearchResults: videos, // Show all search results in UI
+        youtubeSearchResults: candidates, // Show all search results in UI, sorted by views
       };
 
       return {

@@ -27,6 +27,35 @@ export interface ParsedIntent {
 
 // Ordered longest-first to avoid partial matches
 const COMPOSITE_PREFIXES: RegExp[] = [
+  // Change and search/move commands
+  /^change\s+the\s+video\s+and\s+move\s+to\s+search\s+for\s+/i,
+  /^change\s+the\s+video\s+and\s+move\s+to\s+search\s+/i,
+  /^change\s+the\s+play\s+and\s+move\s+to\s+search\s+for\s+/i,
+  /^change\s+the\s+play\s+and\s+move\s+to\s+search\s+/i,
+  /^change\s+the\s+song\s+and\s+move\s+to\s+search\s+for\s+/i,
+  /^change\s+the\s+song\s+and\s+move\s+to\s+search\s+/i,
+  /^change\s+the\s+query\s+and\s+move\s+to\s+search\s+for\s+/i,
+  /^change\s+the\s+query\s+and\s+move\s+to\s+search\s+/i,
+  /^change\s+and\s+move\s+to\s+search\s+for\s+/i,
+  /^change\s+and\s+move\s+to\s+search\s+/i,
+  /^change\s+to\s+search\s+for\s+/i,
+  /^change\s+to\s+search\s+/i,
+  /^move\s+to\s+search\s+for\s+/i,
+  /^move\s+to\s+search\s+/i,
+  /^change\s+the\s+video\s+and\s+search\s+for\s+/i,
+  /^change\s+the\s+video\s+and\s+search\s+/i,
+  /^change\s+the\s+play\s+and\s+search\s+for\s+/i,
+  /^change\s+the\s+play\s+and\s+search\s+/i,
+  /^change\s+the\s+song\s+and\s+search\s+for\s+/i,
+  /^change\s+the\s+song\s+and\s+search\s+/i,
+  /^change\s+and\s+search\s+for\s+/i,
+  /^change\s+and\s+search\s+/i,
+  /^change\s+the\s+search\s+to\s+/i,
+  /^change\s+the\s+video\s+to\s+/i,
+  /^change\s+the\s+song\s+to\s+/i,
+  /^change\s+the\s+play\s+to\s+/i,
+  /^change\s+query\s+to\s+/i,
+  /^change\s+search\s+to\s+/i,
   // Platform + action combos
   /^open\s+youtube\s+and\s+search\s+for\s+/i,
   /^open\s+youtube\s+and\s+search\s+/i,
@@ -140,7 +169,8 @@ function detectPlatform(m: string): IntentPlatform {
     /\b(youtube|yt)\b/.test(m) ||
     /^play\b/.test(m) ||
     /^watch\b/.test(m) ||
-    /\b(video|videos|song|songs|music|tutorial|tutorials|course|courses|listen|podcast|podcasts|highlights|bhajan)\b/.test(m)
+    /\b(video|videos|song|songs|music|tutorial|tutorials|course|courses|listen|podcast|podcasts|highlights|bhajan)\b/.test(m) ||
+    /\b(change\s+the\s+video|change\s+the\s+play|change\s+the\s+song|change\s+the\s+search|change\s+to\s+search|move\s+to\s+search|change\s+and\s+search|change\s+the\s+query|change\s+query|change\s+search)\b/.test(m)
   ) {
     return "youtube";
   }
