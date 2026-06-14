@@ -8,7 +8,7 @@
  *   { platform, action, entity, modifiers, raw }
  */
 
-export type IntentPlatform = "youtube" | "google" | "wikipedia" | "system" | null;
+export type IntentPlatform = "youtube" | "google" | "wikipedia" | "system" | "calendar" | "gmail" | "research" | null;
 export type IntentAction = "search" | "play" | "open" | "none";
 
 export interface ParsedIntent {
@@ -249,7 +249,12 @@ export function parseIntent(raw: string): ParsedIntent {
 
   const platform = detectPlatform(m);
   const action = detectAction(m, platform);
-  const entityRaw = stripRoutingWords(raw);
+  
+  let entityRaw = stripRoutingWords(raw);
+  // Remove command keywords and common connective/filler words globally from the entity query
+  entityRaw = entityRaw.replace(/\b(play|open|watch|search|youtube|find|and|by)\b/gi, "");
+  entityRaw = entityRaw.replace(/\s+/g, " ").trim();
+
   const entity = formatEntity(entityRaw);
   const modifiers = extractModifiers(entity);
 
@@ -273,4 +278,152 @@ export function isComplexCommand(raw: string): boolean {
     /^open\s+(youtube|google|wikipedia)\s+(and|to)\b/.test(m) ||
     /^(play|watch|listen\s+to)\s+.{4,}/.test(m)
   );
+}
+
+export interface NormalizedIntent {
+  intent: string;
+  platform: string;
+  query: string;
+  metadata?: Record<string, any>;
+}
+
+function isWorkflowText(message: string): boolean {
+  const m = message.toLowerCase();
+
+  // Must involve at least two different platforms/systems — skip pure YouTube commands
+  // "Open YouTube and search X" is a single YouTube action, not a multi-step workflow
+  const isPureYouTubeCommand =
+    /^(open\s+youtube|play|watch|listen\s+to|search\s+youtube|youtube\s+search)/.test(m) ||
+    /\b(youtube|yt)\b/.test(m);
+  if (isPureYouTubeCommand) return false;
+
+  // Real multi-step workflows require cross-domain bridging (search + calendar, email + task, etc.)
+  const isSearchCalendar = /(f1 schedule|formula 1|formula one|race schedule|exam date|exam schedule|reminder).*(add|schedule|calendar)/i.test(m);
+  const isSearchNotes = /(research|find|search|news).*(save note|save notes|save to note|save to notes|write down|note it|summarize to note|summarize into notes)/i.test(m);
+  const isGmailTasks = /(email|inbox|gmail|message).*(task|todo|todo list|action item|to-do)/i.test(m);
+  const isResearchNotes = /(analyze|read|summarize).*(paper|research paper).*(note|notes|insight|insights)/i.test(m);
+  // Cross-domain "and" chains (e.g. "find F1 race and add to calendar") — must have a non-search second verb
+  const isCrossDomainAnd = /\band\s+(add|schedule|create|save|send|book|remind|calendar|set\s+reminder)\b/i.test(m);
+
+  return isSearchCalendar || isSearchNotes || isGmailTasks || isResearchNotes || isCrossDomainAnd;
+}
+
+export function getNormalizedIntent(message: string): NormalizedIntent {
+  const parsed = parseIntent(message);
+  const m = message.toLowerCase().trim();
+
+  // If it's a multi-step workflow request, route to workflow_run
+  if (isWorkflowText(message)) {
+    return {
+      intent: "workflow_run",
+      platform: "system",
+      query: message
+    };
+  }
+
+  // Heuristic / rule-based mapping from ParsedIntent to NormalizedIntent
+  let intent = "none";
+  let platform = parsed.platform || "system";
+  let query = parsed.entity || message;
+
+  if (platform === "youtube") {
+    if (parsed.action === "play") {
+      intent = "play_media";
+    } else {
+      intent = "search_media";
+    }
+  } else if (platform === "google") {
+    intent = "research_topic";
+  } else if (platform === "wikipedia") {
+    intent = "research_topic";
+  } else if (/\b(calendar|schedule|meeting|meetings|event|events|reminder|reminders|appointment|appointments|briefing|agenda)\b/.test(m)) {
+    platform = "calendar";
+    if (/\b(morning briefing|daily schedule summary|briefing|daily focus|schedule summary)\b/.test(m)) {
+      intent = "calendar_morning_briefing";
+    } else if (/\b(schedule|add|create|book|appoint)\b/.test(m)) {
+      intent = "calendar_create_event";
+    } else if (/\b(read|show|list|meetings|events|schedule|agenda)\b/.test(m)) {
+      intent = "calendar_read";
+    } else if (/\b(move|reschedule|change|shift)\b/.test(m)) {
+      intent = "calendar_update_event";
+    } else if (/\b(delete|remove|cancel)\b/.test(m)) {
+      intent = "calendar_delete_event";
+    }
+  } else if (/\b(email|emails|gmail|inbox|mail|message|messages|draft|reply|sender|recipient)\b/.test(m)) {
+    platform = "gmail";
+    if (/\b(read|inbox|check|unread|important|summarize|list)\b/.test(m) && !m.includes("draft") && !m.includes("reply")) {
+      intent = "gmail_read_inbox";
+    } else if (/\b(draft|reply|compose|write|create draft)\b/.test(m)) {
+      intent = "gmail_draft_email";
+    } else if (m.startsWith("send ") || m.includes("send email") || m.includes("send the draft")) {
+      intent = "gmail_send_email";
+    }
+  } else if (/\b(research|paper|papers|framework|frameworks|compare|comparison|architecture|documentation|docs|api)\b/.test(m)) {
+    platform = "research";
+    if (/\b(compare|versus|vs)\b/.test(m)) {
+      intent = "research_compare";
+    } else if (/\b(docs|api|documentation|technical docs)\b/.test(m)) {
+      intent = "research_docs";
+    } else {
+      intent = "research_paper";
+    }
+  } else if (
+    /\d/.test(m) &&
+    (/\d+\s*[\+\-\*\/x÷]\s*\d/.test(m) ||
+      /\d+\s*(percent|%)\s+of\s+\d/.test(m) ||
+      /what.{0,15}(is|are|equals?)\s+[\d\s\+\-\*\/x÷%()]+/.test(m) ||
+      /calculate|compute|how much is\s+[\d]/.test(m))
+  ) {
+    platform = "system";
+    intent = "calculate";
+  } else if (
+    /(create|add|make|set|schedule)\s+(a\s+)?(task|reminder|to.?do)/.test(m) ||
+    /remind me to/.test(m) ||
+    /add .{3,} to (my )?(task|to.?do|list)/.test(m)
+  ) {
+    platform = "system";
+    intent = "create_task";
+  } else if (
+    /(remember|note|save|capture|write down|keep note)\s+that/.test(m) ||
+    /^(note|remember):\s/.test(m) ||
+    /save (a |this |that )?(note|reminder|thought)/.test(m)
+  ) {
+    platform = "system";
+    intent = "create_note";
+  } else if (
+    /(what|show|list|tell me|do i have|any)\s.*(task|to.?do|reminder|scheduled)/.test(m) ||
+    /my tasks/.test(m)
+  ) {
+    platform = "system";
+    intent = "get_tasks";
+  } else if (
+    /(what|show|list|tell me|do i have|any)\s.*(note|notes|saved|wrote)/.test(m) ||
+    /my notes/.test(m)
+  ) {
+    platform = "system";
+    intent = "get_notes";
+  } else if (/^open\s+[a-z0-9]+/i.test(m)) {
+    platform = "system";
+    intent = "open_website";
+  } else if (/^search\s+[a-z0-9]+/i.test(m)) {
+    platform = "system";
+    intent = "google_search";
+  }
+
+  // Fallbacks:
+  if (intent === "none") {
+    if (parsed.platform === "youtube") {
+      intent = "search_media";
+    } else if (parsed.platform === "google") {
+      intent = "research_topic";
+    } else if (parsed.platform === "wikipedia") {
+      intent = "research_topic";
+    }
+  }
+
+  return {
+    intent,
+    platform,
+    query
+  };
 }

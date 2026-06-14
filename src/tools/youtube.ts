@@ -1,9 +1,24 @@
-import { youtubeService, type YouTubeVideo } from "@/services/youtube";
+/**
+ * YouTube Tool — Production Quality Reference Implementation
+ *
+ * Pipeline:
+ *   raw query
+ *     → normalizeQuery()          strips command words, preserves content
+ *     → classifyQuery()           music | educational | sports | podcast | general
+ *     → youtubeService.search()   content-aware candidate pool
+ *     → scoreVideo()              multi-factor ranked scoring
+ *     → confidenceEngine()        auto-play vs show-choices vs fallback
+ *     → voiceResponse()           natural language output
+ */
+
+import { youtubeService, classifyQuery, type YouTubeVideo, type QueryContentType } from "@/services/youtube";
 import { type ToolStore } from "@/lib/tools";
 
 export interface YouTubeToolResult {
   tool: "youtube.search" | "youtube.play";
   query: string;
+  normalizedQuery: string;
+  contentType: QueryContentType;
   success: boolean;
   voiceResponse: string;
   videos?: YouTubeVideo[];
@@ -15,382 +30,487 @@ export interface YouTubeToolResult {
     target: string;
   };
   updatedStore?: ToolStore;
+  debugLog: YouTubeDebugLog;
 }
 
-// Cleans command words and extracts the core search/playback entity
-// Ensures search queries are plain text and never contain URLs
-export function cleanAndValidateYouTubeQuery(message: string): string {
-  let clean = message.trim();
+export interface YouTubeDebugLog {
+  query: string;
+  normalizedQuery: string;
+  contentType: QueryContentType;
+  topResult: string;
+  topScore: number;
+  secondScore: number;
+  selectionReason: string;
+  chosenUrl: string;
+}
 
-  // If message itself is a URL or contains a URL, extract the query parameters
-  if (/https?:\/\//i.test(clean)) {
-    try {
-      const urlMatch = clean.match(/https?:\/\/[^\s]+/i);
-      if (urlMatch) {
-        const urlStr = urlMatch[0];
-        const url = new URL(urlStr);
-        if (url.hostname.includes("youtube.com") || url.hostname.includes("youtu.be")) {
-          const searchParam = url.searchParams.get("search_query");
-          const videoParam = url.searchParams.get("v");
-          if (searchParam) {
-            clean = searchParam;
-          } else if (videoParam) {
-            clean = videoParam;
-          } else {
-            clean = clean.replace(urlStr, "").trim();
-          }
-        } else {
-          clean = clean.replace(urlStr, "").trim();
-        }
-      }
-    } catch {
-      clean = clean.replace(/https?:\/\/[^\s]+/gi, "").trim();
+// ─────────────────────────────────────────────────────────────
+// QUERY NORMALIZER
+//
+// Strips only routing/command words from the raw input.
+// Preserves the meaningful content phrase exactly.
+//
+// "Play Believer by Imagine Dragons"   → "Believer by Imagine Dragons"
+// "Open YouTube and search Arijit Singh" → "Arijit Singh"
+// "Search CrewAI tutorials"            → "CrewAI tutorials"
+// "Play latest Formula 1 highlights"  → "latest Formula 1 highlights"
+// ─────────────────────────────────────────────────────────────
+
+const COMPOSITE_PREFIX_PATTERNS: RegExp[] = [
+  // Longest patterns first to avoid partial-strip
+  /^open\s+youtube\s+and\s+search\s+for\s+/i,
+  /^open\s+youtube\s+and\s+search\s+/i,
+  /^open\s+youtube\s+and\s+play\s+/i,
+  /^open\s+youtube\s+and\s+watch\s+/i,
+  /^search\s+youtube\s+for\s+/i,
+  /^search\s+youtube\s+/i,
+  /^youtube\s+search\s+for\s+/i,
+  /^youtube\s+search\s+/i,
+  /^find\s+videos?\s+explaining\s+/i,
+  /^find\s+courses?\s+about\s+/i,
+  /^find\s+videos?\s+about\s+/i,
+  /^show\s+me\s+videos?\s+about\s+/i,
+  /^show\s+me\s+courses?\s+about\s+/i,
+  /^show\s+me\s+/i,
+  /^listen\s+to\s+/i,
+  /^play\s+on\s+youtube\s+/i,
+  /^watch\s+on\s+youtube\s+/i,
+  // Change/move commands (for mid-session query updates)
+  /^change\s+(?:the\s+)?(?:video|song|play|query|search)?\s*(?:and\s+)?(?:move\s+to\s+)?search\s+(?:for\s+)?/i,
+  /^change\s+(?:the\s+)?(?:video|song|play|query|search)\s+to\s+/i,
+  /^move\s+to\s+search\s+(?:for\s+)?/i,
+];
+
+const SINGLE_PREFIX_PATTERNS: RegExp[] = [
+  /^open\s+youtube\s+/i,
+  /^search\s+for\s+/i,
+  /^search\s+/i,
+  /^find\s+/i,
+  /^watch\s+/i,
+  /^play\s+/i,
+  /^listen\s+/i,
+  /^start\s+/i,
+];
+
+const TRAILING_PLATFORM_PATTERN = /\s+on\s+(youtube|yt)$/i;
+
+// Words that are purely routing noise and NEVER appear in content titles
+const PURE_ROUTING_WORDS = new Set([
+  "youtube", "yt", "open", "start",
+]);
+
+export function normalizeQuery(raw: string): string {
+  let s = raw.trim();
+
+  // Strip composite prefixes (longest-first)
+  for (const re of COMPOSITE_PREFIX_PATTERNS) {
+    if (re.test(s)) {
+      s = s.replace(re, "");
+      break;
     }
   }
 
-  // Strip any remaining YouTube or other URLs from the text
-  clean = clean.replace(/(www\.)?youtube\.com\/[^\s]*/gi, "");
-  clean = clean.replace(/(www\.)?youtu\.be\/[^\s]*/gi, "");
-  clean = clean.replace(/https?:\/\/[^\s]*/gi, "");
-
-  // Convert to lowercase for command word stripping
-  clean = clean.toLowerCase();
-
-  // 1. Remove composite prefix patterns (longest first)
-  const prefixPatterns = [
-    /^(change\s+the\s+video\s+and\s+move\s+to\s+search\s+for)/gi,
-    /^(change\s+the\s+video\s+and\s+move\s+to\s+search)/gi,
-    /^(change\s+the\s+play\s+and\s+move\s+to\s+search\s+for)/gi,
-    /^(change\s+the\s+play\s+and\s+move\s+to\s+search)/gi,
-    /^(change\s+the\s+song\s+and\s+move\s+to\s+search\s+for)/gi,
-    /^(change\s+the\s+song\s+and\s+move\s+to\s+search)/gi,
-    /^(change\s+the\s+query\s+and\s+move\s+to\s+search\s+for)/gi,
-    /^(change\s+the\s+query\s+and\s+move\s+to\s+search)/gi,
-    /^(change\s+and\s+move\s+to\s+search\s+for)/gi,
-    /^(change\s+and\s+move\s+to\s+search)/gi,
-    /^(change\s+to\s+search\s+for)/gi,
-    /^(change\s+to\s+search)/gi,
-    /^(move\s+to\s+search\s+for)/gi,
-    /^(move\s+to\s+search)/gi,
-    /^(change\s+the\s+video\s+and\s+search\s+for)/gi,
-    /^(change\s+the\s+video\s+and\s+search)/gi,
-    /^(change\s+the\s+play\s+and\s+search\s+for)/gi,
-    /^(change\s+the\s+play\s+and\s+search)/gi,
-    /^(change\s+the\s+song\s+and\s+search\s+for)/gi,
-    /^(change\s+the\s+song\s+and\s+search)/gi,
-    /^(change\s+and\s+search\s+for)/gi,
-    /^(change\s+and\s+search)/gi,
-    /^(change\s+the\s+search\s+to)/gi,
-    /^(change\s+the\s+video\s+to)/gi,
-    /^(change\s+the\s+song\s+to)/gi,
-    /^(change\s+the\s+play\s+to)/gi,
-    /^(change\s+query\s+to)/gi,
-    /^(change\s+search\s+to)/gi,
-    /^(open\s+youtube\s+and\s+search\s+for)/gi,
-    /^(open\s+youtube\s+and\s+search)/gi,
-    /^(open\s+youtube\s+and\s+play)/gi,
-    /^(open\s+youtube\s+and\s+watch)/gi,
-    /^(search\s+youtube\s+for)/gi,
-    /^(search\s+youtube)/gi,
-    /^(search\s+for)/gi,
-    /^(youtube\s+search\s+for)/gi,
-    /^(youtube\s+search)/gi,
-    /^(find\s+videos\s+explaining)/gi,
-    /^(find\s+courses\s+about)/gi,
-    /^(find\s+videos\s+about)/gi,
-    /^(show\s+me\s+videos\s+about)/gi,
-    /^(show\s+me\s+courses\s+about)/gi,
-    /^(play\s+on\s+youtube)/gi,
-    /^(play\s+youtube)/gi,
-    /^(play\s+yt)/gi,
-    /^(watch\s+on\s+youtube)/gi,
-    /^(watch\s+youtube)/gi,
-    /^(listen\s+to\s+on\s+youtube)/gi,
-    /^(listen\s+to)/gi,
-    /^(start\s+on\s+youtube)/gi,
-  ];
-
-  for (const pattern of prefixPatterns) {
-    clean = clean.replace(pattern, "");
+  // Strip single prefixes
+  for (const re of SINGLE_PREFIX_PATTERNS) {
+    if (re.test(s)) {
+      s = s.replace(re, "");
+      break;
+    }
   }
 
-  // 2. Remove single prefix patterns if still at start
-  const singlePrefixes = [
-    /^(open\s+youtube)/gi,
-    /^(search)/gi,
-    /^(find)/gi,
-    /^(play)/gi,
-    /^(watch)/gi,
-    /^(open)/gi,
-    /^(listen)/gi,
-    /^(start)/gi,
-    /^(show\s+me)/gi,
-  ];
-  for (const pattern of singlePrefixes) {
-    clean = clean.replace(pattern, "");
-  }
+  // Strip trailing platform suffix
+  s = s.replace(TRAILING_PLATFORM_PATTERN, "").trim();
 
-  // 3. Remove connectives
-  clean = clean.replace(/^(and\s+search\s+for)/gi, "");
-  clean = clean.replace(/^(and\s+search)/gi, "");
-  clean = clean.replace(/^(and\s+play)/gi, "");
-  clean = clean.replace(/^(and\s+watch)/gi, "");
-  clean = clean.replace(/^(and)/gi, "");
+  // Strip leading connectives that may remain ("and search for X")
+  s = s.replace(/^and\s+(?:search\s+(?:for\s+)?|play\s+|watch\s+)?/i, "");
 
-  // 4. Remove suffixes
-  clean = clean.replace(/\s+on\s+(youtube|yt)$/gi, "");
+  // Strip ONLY pure routing words that appear globally — NOT content words like "play", "watch", "search"
+  // (those can legitimately be part of a title: "How to play guitar")
+  const words = s.split(/\s+/).filter(w => w.length > 0 && !PURE_ROUTING_WORDS.has(w.toLowerCase()));
+  s = words.join(" ").trim();
 
-  // 5. Validation: Strip forbidden command phrases globally ONLY if they appear at the start
-  // Do NOT strip words like "play" or "watch" from mid-query — they may be content words
-  const globalForbidden = [
-    /^(open\s+youtube)\b/gi,
-    /^(search\s+youtube)\b/gi,
-    /^(search\s+for)\b/gi,
-  ];
-
-  for (const pattern of globalForbidden) {
-    clean = clean.replace(pattern, "");
-  }
-
-  let finalQuery = clean.replace(/\s+/g, " ").trim();
-  
-  // Format words nicely
-  if (finalQuery.length > 0) {
-    finalQuery = finalQuery
+  // Capitalize properly (preserve casing for known acronyms)
+  if (s.length > 0) {
+    s = s
       .split(" ")
-      .map(word => {
-        if (word === "ai") return "AI";
-        if (word === "vs") return "vs";
-        return word.charAt(0).toUpperCase() + word.slice(1);
+      .map(w => {
+        const lower = w.toLowerCase();
+        if (lower === "ai") return "AI";
+        if (lower === "ml") return "ML";
+        if (lower === "f1") return "F1";
+        if (lower === "rag") return "RAG";
+        if (lower === "llm") return "LLM";
+        if (lower === "vs") return "vs";
+        // Don't uppercase small connectives mid-string
+        if (w !== s.split(" ")[0] && ["by", "of", "the", "a", "an", "and", "in", "for", "to"].includes(lower)) {
+          return lower;
+        }
+        return w.charAt(0).toUpperCase() + w.slice(1);
       })
       .join(" ");
   }
 
-  return finalQuery;
+  return s || raw.trim(); // never return empty string
 }
 
-// Confidence scorer: uses semantic word overlap, channel/artist match, and exact phrase match
-function calculateConfidence(query: string, video: YouTubeVideo): number {
-  const q = query.toLowerCase().trim();
-  const title = video.title.toLowerCase();
-  const channel = video.channel.toLowerCase();
+// ─────────────────────────────────────────────────────────────
+// SCORING ENGINE
+//
+// Produces a score in [0, 1] for a single video against the query.
+// Higher is better. Uses content-type-aware rules.
+// ─────────────────────────────────────────────────────────────
 
-  // Strip common filler words from query for cleaner matching
-  let cleanQ = q
-    .replace(/\b(play|watch|listen\s+to|listen|start|open|on|youtube|yt|video|videos|by|the|a|an)\b/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+export function scoreVideo(normalizedQuery: string, video: YouTubeVideo, contentType: QueryContentType): number {
+  const q = normalizedQuery.toLowerCase();
+  const titleLower = video.title.toLowerCase();
+  const channelLower = video.channel.toLowerCase();
 
-  if (!cleanQ && q) {
-    cleanQ = q;
+  // ── Core word-overlap score (0–50 pts) ────────────────────
+  const queryWords = q.split(/\s+/).filter(w => w.length > 1);
+  let overlap = 0;
+  for (const word of queryWords) {
+    if (titleLower.includes(word) || channelLower.includes(word)) overlap++;
   }
+  const wordOverlapScore = queryWords.length > 0 ? (overlap / queryWords.length) * 50 : 0;
 
-  // 1. Semantic similarity (word overlap) - 40% (0.40)
-  const queryWords = cleanQ.split(/\s+/).filter(w => w.length > 0);
-  let semanticScore = 0;
-  if (queryWords.length > 0) {
-    let matches = 0;
-    for (const word of queryWords) {
-      if (title.includes(word) || channel.includes(word)) {
-        matches++;
-      }
+  // ── Phrase match bonus (0–20 pts) ─────────────────────────
+  const phraseScore = (titleLower.includes(q) || channelLower.includes(q)) ? 20 : 0;
+
+  let score = wordOverlapScore + phraseScore;
+
+  // ── Content-type-specific scoring ─────────────────────────
+  if (contentType === "music" || video.contentType === "music") {
+    // Strongly prefer official artist channels and VEVO (+20)
+    if (
+      video.isOfficial &&
+      (channelLower.includes("vevo") || channelLower.endsWith("topic") ||
+       video.isVerifiedChannel || channelLower.includes("official"))
+    ) {
+      score += 20;
     }
-    semanticScore = matches / queryWords.length;
-  }
-
-  // 2. Title match (exact/partial phrase) - 25% (0.25)
-  const titleClean = title.replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
-  const queryClean = cleanQ.replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
-
-  let titleScore = 0;
-  if (queryClean && titleClean.includes(queryClean)) {
-    titleScore = 1.0;
-  } else if (queryClean.length > 4) {
-    const titleWords = titleClean.split(/\s+/).filter(w => w.length > 3);
-    const matchingTitleWords = titleWords.filter(w => queryClean.includes(w));
-    if (titleWords.length > 0 && matchingTitleWords.length / titleWords.length >= 0.7) {
-      titleScore = 0.7;
+    // Prefer "Official Music Video" label (+15)
+    if (/\b(official music video|official video|official audio)\b/.test(titleLower)) {
+      score += 15;
     }
+    // Verified channel bonus (+10)
+    if (video.isVerifiedChannel) score += 10;
+    // Exact song-name match (+10)
+    const titleWords = titleLower.replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(w => w.length > 1);
+    const allQueryWordsInTitle = queryWords.every(w => titleWords.includes(w));
+    if (allQueryWordsInTitle && queryWords.length >= 2) score += 10;
+
+    // HARD PENALTIES
+    if (/\b(reaction|reacting|react to|fan edit|fan made|fan-made|reupload|re-upload|bootleg|tribute|cover|cover version)\b/.test(titleLower)) {
+      score -= 50;
+    }
+    if (/\b(lyrics?)\b/.test(titleLower) && !q.includes("lyric")) {
+      score -= 25;
+    }
+    if (/\b(karaoke|instrumental)\b/.test(titleLower)) {
+      score -= 20;
+    }
+  } else if (contentType === "educational" || video.contentType === "educational") {
+    // Trusted creator bonus (+20)
+    const trustedChannels = ["fireship", "freecodecamp", "3blue1brown", "ibm technology", "langchain", "google", "microsoft", "ai jason"];
+    if (trustedChannels.some(ch => channelLower.includes(ch))) score += 20;
+    // Verified channel (+10)
+    if (video.isVerifiedChannel) score += 10;
+    // Recency bonus: content within 2 years gets full bonus, fades to 0 at 5 years (+10 max)
+    if (video.uploadedAt) {
+      const ageYears = (new Date("2026-06-07").getTime() - new Date(video.uploadedAt).getTime()) / (365.25 * 24 * 3600 * 1000);
+      score += Math.max(0, 1 - ageYears / 5) * 10;
+    }
+    // View engagement proxy (+5 max)
+    if (video.views && video.views > 0) {
+      score += Math.min(Math.log10(video.views) / 8, 1.0) * 5;
+    }
+    // Full course / complete tutorial preference (+8)
+    if (/\b(full course|complete|from scratch|beginner to advanced)\b/.test(titleLower)) score += 8;
+    // PENALTIES
+    if (/\b(#shorts|shorts)\b/.test(titleLower)) score -= 40;
+    if (/\b(#short)\b/.test(titleLower)) score -= 40;
+  } else if (contentType === "sports" || video.contentType === "sports") {
+    // Official broadcaster/league channels (+25)
+    const officialSports = ["formula 1", "f1", "espn", "nba", "nfl", "fifa", "icc", "bcci", "bein sports", "sky sports"];
+    if (officialSports.some(ch => channelLower.includes(ch)) || video.isOfficial) score += 25;
+    if (video.isVerifiedChannel) score += 10;
+    // Recency bonus for sports (last year = +15, older fades quickly)
+    if (video.uploadedAt) {
+      const ageYears = (new Date("2026-06-07").getTime() - new Date(video.uploadedAt).getTime()) / (365.25 * 24 * 3600 * 1000);
+      score += Math.max(0, 1 - ageYears / 2) * 15;
+    }
+    // "highlights" keyword match bonus (+12) — query asking for highlights prefers highlight videos
+    if (q.includes("highlights") && titleLower.includes("highlights")) score += 12;
+    // Alias: "f1" in title counts as matching "formula 1" in query
+    if ((q.includes("formula") || q.includes("f1")) && (titleLower.includes("formula") || channelLower.includes("formula 1") || channelLower.includes("f1"))) {
+      score += 8;
+    }
+    // PENALTIES
+    if (/\b(fan clip|random edit|fan upload|fan video|fan made)\b/.test(titleLower)) score -= 40;
+
+  } else {
+    // General fallback bonuses
+    if (video.isOfficial) score += 10;
+    if (video.isVerifiedChannel) score += 10;
   }
 
-  // 3. Popularity (views) - 20% (0.20)
-  const views = video.views || 0;
-  const popularityScore = views > 0 ? Math.min(Math.log10(views) / 9, 1.0) : 0;
-
-  // 4. Channel credibility (isOfficial) - 10% (0.10)
-  const credibilityScore = (video.isOfficial || video.isVerifiedChannel) ? 1.0 : 0.0;
-
-  // 5. Recency (upload date proximity) - 5% (0.05)
-  const uploadDate = new Date(video.uploadedAt || "2015-01-01");
-  const currentDate = new Date("2026-06-07");
-  const ageInYears = (currentDate.getTime() - uploadDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
-  const recencyScore = Math.max(0, 1 - ageInYears / 10);
-
-  const confidence = (semanticScore * 0.40) + (titleScore * 0.25) + (popularityScore * 0.20) + (credibilityScore * 0.10) + (recencyScore * 0.05);
-
-  return Math.min(Math.max(confidence, 0.0), 1.0);
+  // Clamp to [0, 1]
+  return Math.min(Math.max(score / 100, 0.0), 1.0);
 }
+
+// ─────────────────────────────────────────────────────────────
+// NATURAL VOICE RESPONSE BUILDER
+// ─────────────────────────────────────────────────────────────
+
+function buildVoiceResponse(
+  action: "play" | "search" | "fallback",
+  video: YouTubeVideo | null,
+  query: string,
+  contentType: QueryContentType
+): string {
+  if (action === "fallback") {
+    return `I couldn't find a direct match for "${query}", so I'm opening the YouTube search results.`;
+  }
+
+  if (action === "search") {
+    return `Here are the top YouTube results for "${query}".`;
+  }
+
+  if (!video) return `Playing "${query}" on YouTube.`;
+
+  const title = video.title;
+  const titleLower = title.toLowerCase();
+
+  // Music: distinguish official MV vs generic
+  if (contentType === "music" || video.contentType === "music") {
+    if (/\b(official music video)\b/.test(titleLower)) {
+      return `I found the official music video for "${query.split(" ").slice(0, 3).join(" ")}". Playing now.`;
+    }
+    if (/\b(official video|official audio)\b/.test(titleLower)) {
+      return `I found the official video — "${title}". Playing now.`;
+    }
+    return `Playing "${title}" on YouTube.`;
+  }
+
+  // Sports
+  if (contentType === "sports" || video.contentType === "sports") {
+    if (titleLower.includes("highlights")) {
+      return `I found the latest highlights — "${title}". Playing now.`;
+    }
+    return `Playing "${title}" on YouTube.`;
+  }
+
+  // Educational
+  if (contentType === "educational" || video.contentType === "educational") {
+    if (titleLower.includes("full course") || titleLower.includes("from scratch")) {
+      return `I found a complete tutorial — "${title}". Playing now.`;
+    }
+    return `Playing "${title}" — a tutorial from ${video.channel}.`;
+  }
+
+  return `Playing "${title}" on YouTube.`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// YOUTUBE SEARCH TOOL
+// ─────────────────────────────────────────────────────────────
 
 export const YouTubeSearchTool = {
   name: "youtube.search" as const,
+
   execute(query: string, store: ToolStore): YouTubeToolResult {
-    const cleanQuery = cleanAndValidateYouTubeQuery(query);
-    const res = youtubeService.search(cleanQuery);
-    const updatedStore = {
-      ...store,
-      youtubeSearchResults: res.videos,
+    const normalized = normalizeQuery(query);
+    const contentType = classifyQuery(normalized);
+    const searchRes = youtubeService.search(normalized);
+    const videos = searchRes.videos;
+
+    const updatedStore: ToolStore = { ...store, youtubeSearchResults: videos };
+    const debugLog: YouTubeDebugLog = {
+      query,
+      normalizedQuery: normalized,
+      contentType,
+      topResult: videos[0]?.title ?? "none",
+      topScore: 0,
+      secondScore: 0,
+      selectionReason: "Returning search results without auto-play.",
+      chosenUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(normalized)}`,
     };
+
     return {
       tool: "youtube.search",
-      query: cleanQuery,
+      query,
+      normalizedQuery: normalized,
+      contentType,
       success: true,
-      voiceResponse: "Here are the most relevant YouTube results.",
-      videos: res.videos,
+      voiceResponse: buildVoiceResponse("search", null, normalized, contentType),
+      videos,
       activeTab: "media",
       browserAction: {
         actionType: "youtubeSearch",
-        target: cleanQuery, // Pass clean query directly to generate search URL exactly once on client
+        target: normalized,
       },
       updatedStore,
+      debugLog,
     };
-  }
+  },
 };
+
+// ─────────────────────────────────────────────────────────────
+// YOUTUBE PLAY TOOL
+// ─────────────────────────────────────────────────────────────
 
 export const YouTubePlayTool = {
   name: "youtube.play" as const,
+
   execute(query: string, store: ToolStore): YouTubeToolResult {
-    const cleanQuery = cleanAndValidateYouTubeQuery(query);
-    // 1. Search YouTube programmatically using the search service
-    const searchRes = youtubeService.search(cleanQuery);
-    const videos = searchRes.videos || [];
+    const normalized = normalizeQuery(query);
+    const contentType = classifyQuery(normalized);
 
-    // 2. Score and rank candidate videos using metadata: Relevance, Views, Recency, and Official content preference
-    const scoredCandidates = videos.map(video => {
-      const relevance = calculateConfidence(cleanQuery, video);
-      
-      let compositeScore = relevance * 100;
-      if (relevance > 0) {
-        const titleLower = video.title.toLowerCase();
-        const channelLower = video.channel.toLowerCase();
+    // 1. Retrieve candidates
+    const searchRes = youtubeService.search(normalized);
+    const candidates = searchRes.videos ?? [];
 
-        if (video.contentType === "music") {
-          // +20 for official VEVO/artist channels
-          if (channelLower.includes("vevo") || video.isOfficial) {
-            compositeScore += 20;
-          }
-          // -30 for fan edits (identified by keywords: "reaction", "cover", "fan", "edit", "lyric fan")
-          const isFanEdit = ["reaction", "cover", "fan", "edit", "lyric fan"].some(keyword => titleLower.includes(keyword));
-          if (isFanEdit) {
-            compositeScore -= 30;
-          }
-        } else if (video.contentType === "educational") {
-          // +15 for established channels (Fireship, FreeCodeCamp, 3Blue1Brown, IBM Technology, LangChain)
-          const isEstablished = ["fireship", "freecodecamp", "3blue1brown", "ibm technology", "langchain"].some(ch => channelLower.includes(ch));
-          if (isEstablished) {
-            compositeScore += 15;
-          }
-          // -25 for Shorts content (identified by "#shorts" or "shorts")
-          const isShorts = titleLower.includes("#shorts") || titleLower.includes("shorts");
-          if (isShorts) {
-            compositeScore -= 25;
-          }
-        } else if (video.contentType === "sports") {
-          // +20 for official broadcasters
-          if (video.isOfficial || video.isVerifiedChannel) {
-            compositeScore += 20;
-          }
-          // -20 for fan uploads (identified by "fan clip", "random edit")
-          const isFanUpload = ["fan clip", "random edit", "fan upload", "fan video"].some(keyword => titleLower.includes(keyword));
-          if (isFanUpload) {
-            compositeScore -= 20;
-          }
-        }
-      }
+    // 2. Score each candidate
+    const scored = candidates
+      .map(video => ({ video, score: scoreVideo(normalized, video, contentType) }))
+      .sort((a, b) => {
+        // Primary: score desc. Tie-break: views desc.
+        if (Math.abs(b.score - a.score) > 0.005) return b.score - a.score;
+        return (b.video.views ?? 0) - (a.video.views ?? 0);
+      });
 
-      // Final relevance after content selection rules, bounded at [0.0, 1.0]
-      const finalRelevance = Math.min(Math.max(compositeScore / 100, 0.0), 1.0);
+    const top = scored[0];
+    const second = scored[1];
+    const topScore = top?.score ?? 0;
+    const secondScore = second?.score ?? 0;
 
-      return {
-        video,
-        relevance: finalRelevance, // Use final relevance for confidence thresholds
-        compositeScore
-      };
-    });
+    // ── DEBUG LOG ─────────────────────────────────────────────
+    const debugLog: YouTubeDebugLog = {
+      query,
+      normalizedQuery: normalized,
+      contentType,
+      topResult: top?.video.title ?? "none",
+      topScore,
+      secondScore,
+      selectionReason: "", // filled below
+      chosenUrl: "",       // filled below
+    };
 
-    // Sort primarily by views descending, breaking ties with composite score
-    scoredCandidates.sort((a, b) => {
-      const viewsA = a.video.views || 0;
-      const viewsB = b.video.views || 0;
-      if (viewsB !== viewsA) {
-        return viewsB - viewsA;
-      }
-      return b.compositeScore - a.compositeScore;
-    });
+    // ── CONFIDENCE ENGINE ─────────────────────────────────────
+    // Thresholds:
+    //   CLEAR_WINNER_MARGIN = 0.12  → auto-play if top beats second by ≥ 12%
+    //   MIN_AUTOPLAY_SCORE  = 0.25  → never auto-play with very weak confidence
+    const CLEAR_WINNER_MARGIN = 0.12;
+    const MIN_AUTOPLAY_SCORE = 0.25;
 
-    const topCandidate = scoredCandidates[0];
-    const topConfidence = topCandidate ? topCandidate.relevance : 0;
+    // ── CASE 0: No candidates → open search page ──────────────
+    if (candidates.length === 0 || !top) {
+      debugLog.selectionReason = "No candidates returned by service. Falling back to YouTube search page.";
+      debugLog.chosenUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(normalized)}`;
 
-    // 3. Branch based on confidence thresholds
-    if (topConfidence > 0.8) {
-      // High Confidence (>0.8) -> Auto-play
-      const videoUrl = topCandidate.video.url;
-      const videoTitle = topCandidate.video.title;
-      
-      const updatedStore = {
-        ...store,
-        youtubeSearchResults: undefined, // Clear results
-      };
+      console.log(`[YouTube] Query: "${query}" | Normalized: "${normalized}" | ContentType: ${contentType}`);
+      console.log(`[YouTube] NO CANDIDATES — fallback to search page`);
 
       return {
         tool: "youtube.play",
-        query: cleanQuery,
+        query,
+        normalizedQuery: normalized,
+        contentType,
         success: true,
-        voiceResponse: "Playing the most relevant result on YouTube.",
-        videoUrl,
-        videoTitle,
-        activeTab: "media",
-        browserAction: {
-          actionType: "youtubePlay",
-          target: videoUrl,
-        },
-        updatedStore,
-      };
-    } else if (topConfidence >= 0.5) {
-      // Medium Confidence (0.5 to 0.8) -> Show top 3 candidate videos
-      const candidates = scoredCandidates.slice(0, 3).map(c => c.video);
-      const updatedStore = {
-        ...store,
-        youtubeSearchResults: candidates,
-      };
-
-      return {
-        tool: "youtube.play",
-        query: cleanQuery,
-        success: true,
-        voiceResponse: "I found several relevant videos. Which one would you like?",
-        activeTab: "media",
-        updatedStore,
-      };
-    } else {
-      // Low Confidence (<0.5) -> Open YouTube search page (graceful fallback)
-      const candidates = scoredCandidates.map(c => c.video);
-      const updatedStore = {
-        ...store,
-        youtubeSearchResults: candidates, // Show all search results in UI, sorted by views
-      };
-
-      return {
-        tool: "youtube.play",
-        query: cleanQuery,
-        success: true,
-        voiceResponse: "Here are the most relevant YouTube results.",
+        voiceResponse: buildVoiceResponse("fallback", null, normalized, contentType),
         activeTab: "media",
         browserAction: {
           actionType: "youtubeSearch",
-          target: cleanQuery, // Pass clean query directly to client browser search
+          target: normalized,
         },
-        updatedStore,
+        updatedStore: store,
+        debugLog,
       };
     }
-  }
+
+    // ── CASE 1: Clear winner (or only one candidate) → auto-play ──
+    const isClearWinner =
+      !second ||
+      (topScore - secondScore >= CLEAR_WINNER_MARGIN && topScore >= MIN_AUTOPLAY_SCORE);
+
+    if (isClearWinner) {
+      debugLog.selectionReason = !second
+        ? `Only one candidate (score ${topScore.toFixed(3)}). Auto-playing.`
+        : `Clear winner: top score ${topScore.toFixed(3)} beats second ${secondScore.toFixed(3)} by ${(topScore - secondScore).toFixed(3)} ≥ ${CLEAR_WINNER_MARGIN} margin.`;
+      debugLog.chosenUrl = top.video.url;
+
+      console.log(`[YouTube] Query: "${query}" | Normalized: "${normalized}" | ContentType: ${contentType}`);
+      console.log(`[YouTube] CLEAR WINNER: "${top.video.title}" | score=${topScore.toFixed(3)} | url=${top.video.url}`);
+      console.log(`[YouTube] Reason: ${debugLog.selectionReason}`);
+
+      return {
+        tool: "youtube.play",
+        query,
+        normalizedQuery: normalized,
+        contentType,
+        success: true,
+        voiceResponse: buildVoiceResponse("play", top.video, normalized, contentType),
+        videoUrl: top.video.url,
+        videoTitle: top.video.title,
+        activeTab: "media",
+        browserAction: {
+          actionType: "youtubePlay",
+          target: top.video.url,
+        },
+        updatedStore: { ...store, youtubeSearchResults: undefined },
+        debugLog,
+      };
+    }
+
+    // ── CASE 2: Scores are close → show top 3 choices ─────────
+    // But if top score is very high (≥ 0.85), still auto-play
+    if (topScore >= 0.85) {
+      debugLog.selectionReason = `High confidence (${topScore.toFixed(3)} ≥ 0.85) despite close second. Auto-playing top result.`;
+      debugLog.chosenUrl = top.video.url;
+
+      console.log(`[YouTube] HIGH CONFIDENCE auto-play: "${top.video.title}" | score=${topScore.toFixed(3)}`);
+
+      return {
+        tool: "youtube.play",
+        query,
+        normalizedQuery: normalized,
+        contentType,
+        success: true,
+        voiceResponse: buildVoiceResponse("play", top.video, normalized, contentType),
+        videoUrl: top.video.url,
+        videoTitle: top.video.title,
+        activeTab: "media",
+        browserAction: {
+          actionType: "youtubePlay",
+          target: top.video.url,
+        },
+        updatedStore: { ...store, youtubeSearchResults: undefined },
+        debugLog,
+      };
+    }
+
+    // Ambiguous — present top 3
+    const top3 = scored.slice(0, 3).map(s => s.video);
+    debugLog.selectionReason = `Ambiguous: top ${topScore.toFixed(3)} vs second ${secondScore.toFixed(3)} — margin ${(topScore - secondScore).toFixed(3)} < ${CLEAR_WINNER_MARGIN}. Showing top 3.`;
+    debugLog.chosenUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(normalized)}`;
+
+    console.log(`[YouTube] AMBIGUOUS: showing top 3 | top="${top.video.title}" score=${topScore.toFixed(3)}`);
+    console.log(`[YouTube] Reason: ${debugLog.selectionReason}`);
+
+    return {
+      tool: "youtube.play",
+      query,
+      normalizedQuery: normalized,
+      contentType,
+      success: true,
+      voiceResponse: `I found a few good matches for "${normalized}". Here are the top 3 options.`,
+      videos: top3,
+      activeTab: "media",
+      updatedStore: { ...store, youtubeSearchResults: top3 },
+      debugLog,
+    };
+  },
 };
+
+// Legacy alias for backward compatibility
+export { normalizeQuery as cleanAndValidateYouTubeQuery };
